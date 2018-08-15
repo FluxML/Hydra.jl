@@ -1,5 +1,12 @@
+__precompile__(false)
+
 module SPMD
 
-greet() = print("Hello World!")
+using MacroTools
+using MacroTools: @forward
+
+include("tools/ir.jl")
+include("tools/slots.jl")
+include("tools/reflection.jl")
 
 end # module
