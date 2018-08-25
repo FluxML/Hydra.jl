@@ -107,6 +107,9 @@ function inlineable!(ir)
   compact!(ir)
 end
 
+spmd(::typeof(println), xs...) where {T,N} = println(unvect.(xs)...)
+spmd(::typeof(print), xs...) where {T,N} = println(unvect.(xs)...)
+
 function spmd(f, args...)
   if any(isvect, args)
     tospmd(f, args...)
@@ -160,7 +163,7 @@ end
 # pass(x)
 g(x) = x * 2
 function f(x)
-  g(x) < 10
+  println(g(x) < 10)
 end
-println("Result: ", tospmd(f, vect(1,3,4,5)))
+tospmd(f, vect(1,2,3,4,5))
 # pass(y)

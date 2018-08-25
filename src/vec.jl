@@ -9,6 +9,7 @@ vect(xs::T...) where T <: Number = Vec(VecElement.(xs))
 vect(xs...) = vect(promote(xs...)...)
 
 unvect(x::Vec{T,N}) where {T,N} = getfield.(x.data, :value)
+unvect(x) = x
 tovect(n, x) = vect(repeat([x], n)...)
 isvect(x::Vec{T,N}) where {T,N} = true
 isvect(x) = false
