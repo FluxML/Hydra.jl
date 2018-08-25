@@ -108,7 +108,7 @@ function inlineable!(ir)
 end
 
 spmd(::typeof(println), xs...) where {T,N} = println(unvect.(xs)...)
-spmd(::typeof(print), xs...) where {T,N} = println(unvect.(xs)...)
+spmd(::typeof(print), xs...) where {T,N} = print(unvect.(xs)...)
 
 function spmd(f, args...)
   if any(isvect, args)
