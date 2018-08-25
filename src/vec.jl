@@ -8,20 +8,10 @@ end
 vect(xs::T...) where T <: Number = Vec(VecElement.(xs))
 vect(xs...) = vect(promote(xs...)...)
 
+unvect(x::Vec{T,N}) where {T,N} = getfield.(x.data, :value)
 tovect(n, x) = vect(repeat([x], n)...)
 isvect(x::Vec{T,N}) where {T,N} = true
 isvect(x) = false
-
-
-
-function Base.:+(x::Vec{T,N}, y::Vec{T,N}) where {T,N}
-  result = []
-  for i in range(1,length=N)
-    append!(result, [x.data[i].value + y.data[i].value])
-  end
-  vect(result...)
-end
-vect(1,2,3) + vect(2,3,4)
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
@@ -42,9 +32,10 @@ vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
 import Base.convert, Base.promote_rule
 convert(::Type{Vec{T, N}}, x::T) where {N, T} = tovect(N,x)
+convert(::Type{Vec{T, N}}, x::S) where {N, T, S} = tovect(N,T(x))
+convert(::Type{Vec{T, N}}, x::Vec{S, N}) where {S,T,N} = Vec(VecElement.(T.(unvect(x))))
 promote_rule(::Type{Vec{S,N}}, ::Type{T}) where {S,T,N} = Vec{promote_type(T,S),N}
 
 # vect(1,2,3,4)
-# vect(true, false, true, true)
-
+promote(1, vect(1.2))
 # spmd(::typeof(+), mask, a::Vec, b::Vec) = ...

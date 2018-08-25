@@ -107,18 +107,14 @@ function inlineable!(ir)
   compact!(ir)
 end
 
-function f(x)
-  y = x + 1
-  y + 3
-end
-
 function spmd(f, args...)
   if any(isvect, args)
-    f(promote(args...)...)
+    tospmd(f, args...)
   else
     f(args...)
   end
 end
+
 
 function pass(x::IRCode)
   new_stmts = []
@@ -162,6 +158,9 @@ end
 
 # x = @code_ir f(1)
 # pass(x)
-
-println("Result: ", tospmd(f, vect(1,2,3)))
+g(x) = x * 2
+function f(x)
+  g(x) < 10
+end
+println("Result: ", tospmd(f, vect(1,3,4,5)))
 # pass(y)
