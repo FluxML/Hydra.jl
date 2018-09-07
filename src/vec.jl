@@ -19,8 +19,14 @@ summary(::Vec) = "Vec"
 
 Base.getindex(v::Vec, i) = v.data[i].value
 
-vec(xs::T...) where T = Vec(VecElement.(xs))
-vec(xs...) = vec(promote(xs...)...)
+vect(xs::T...) where T <: Number = Vec(VecElement.(xs))
+vect(xs...) = vect(promote(xs...)...)
+
+unvect(x::Vec{T,N}) where {T,N} = getfield.(x.data, :value)
+unvect(x) = x
+tovect(n, x) = vect(repeat([x], n)...)
+isvect(x::Vec{T,N}) where {T,N} = true
+isvect(x) = false
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
@@ -41,9 +47,14 @@ Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
 end
 
 # TODO use smaller words where possible
-vec(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
+vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
-# vec(1,2,3,4)
-# vec(true, false, true, true)
+import Base.convert, Base.promote_rule
+convert(::Type{Vec{T, N}}, x::T) where {N, T} = tovect(N,x)
+convert(::Type{Vec{T, N}}, x::S) where {N, T, S} = tovect(N,T(x))
+convert(::Type{Vec{T, N}}, x::Vec{S, N}) where {S,T,N} = Vec(VecElement.(T.(unvect(x))))
+promote_rule(::Type{Vec{S,N}}, ::Type{T}) where {S,T,N} = Vec{promote_type(T,S),N}
 
+# vect(1,2,3,4)
+promote(1, vect(1.2))
 # spmd(::typeof(+), mask, a::Vec, b::Vec) = ...

@@ -2,7 +2,7 @@ using Core: CodeInfo
 
 worldcounter() = ccall(:jl_get_world_counter, UInt, ())
 
-struct Meta
+struct MetaInfo
   method::Method
   code::CodeInfo
   sparams
@@ -18,7 +18,7 @@ function meta(T; world = worldcounter())
   type_signature, sps, method = first(_methods)
   mi = Core.Compiler.code_for_method(method, type_signature, sps, world, false)
   ci = Base.isgenerated(mi) ? Base.get_staged(mi) : Base.uncompressed_ast(mi)
-  Meta(method, ci, sps)
+  MetaInfo(method, ci, sps)
 end
 
 function inline_sparams!(ir::IRCode, sps)
@@ -31,7 +31,7 @@ function inline_sparams!(ir::IRCode, sps)
   return finish(ir)
 end
 
-function IRCode(meta::Meta)
+function IRCode(meta::MetaInfo)
   ir = just_construct_ssa(meta.code, deepcopy(meta.code.code),
                           Int(meta.method.nargs)-1, meta.sparams)
   return inline_sparams!(ir, meta.sparams)
@@ -102,6 +102,42 @@ function update!(meta, ir::IRCode)
   slots!(meta.code)
 end
 
+function inlineable!(ir)
+  insert_node!(ir, 1, Any, Expr(:meta, :inline))
+  compact!(ir)
+end
+
+spmd(::typeof(println), xs...) where {T,N} = println(unvect.(xs)...)
+spmd(::typeof(print), xs...) where {T,N} = print(unvect.(xs)...)
+
+function spmd(f, args...)
+  if any(isvect, args)
+    tospmd(f, args...)
+  else
+    f(args...)
+  end
+end
+
+
+function pass(x::IRCode)
+  new_stmts = []
+  for stmt in x.stmts
+    if isexpr(stmt, :call)
+      new_stmt = xcall(SPMD, :spmd, stmt.args...)
+      append!(new_stmts, [new_stmt])
+    else
+      append!(new_stmts, [stmt])
+    end
+
+    # println(fieldnames(stmt))
+  end
+  # append!(new_stmts, [:(1)])
+  return IRCode(x, new_stmts, x.types, x.lines, x.flags, x.cfg, x.new_nodes)
+end
+
+unvec(::Type{Vec{T,N}}) where {T,N} = T
+unvec(x) = x
+
 @generated function roundtrip(f, args...)
   m = meta(Tuple{f,args...})
   ir = IRCode(m)
@@ -112,7 +148,22 @@ end
   return m.code
 end
 
-function inlineable!(ir)
-  insert_node!(ir, 1, Any, Expr(:meta, :inline))
-  compact!(ir)
+@generated function tospmd(f, args...)
+  m = meta(Tuple{f,map(unvec, args)...})
+  ir = IRCode(m)
+  ir = varargs!(m, ir)
+  argnames!(m, :f, :args)
+  ir = spliceargs!(m, ir, (Symbol("#self#"), typeof(roundtrip)))
+  ir = pass(ir)
+  update!(m, ir)
+  return m.code
 end
+
+# x = @code_ir f(1)
+# pass(x)
+g(x) = x * 2
+function f(x)
+  println(g(x) < 10)
+end
+tospmd(f, vect(1,2,3,4,5))
+# pass(y)
