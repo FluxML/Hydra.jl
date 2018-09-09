@@ -120,23 +120,16 @@ end
 
 
 function pass(x::IRCode)
-  new_stmts = []
-  for stmt in x.stmts
-    if isexpr(stmt, :call)
-      new_stmt = xcall(SPMD, :spmd, stmt.args...)
-      append!(new_stmts, [new_stmt])
-    else
-      append!(new_stmts, [stmt])
+  stmts = x.stmts
+  for i in range(1, length(stmts))
+    if isexpr(stmts[i], :call)
+      stmts[i] = xcall(SPMD, :spmd, stmts[i].args...)
     end
-
-    # println(fieldnames(stmt))
   end
-  # append!(new_stmts, [:(1)])
-  return IRCode(x, new_stmts, x.types, x.lines, x.flags, x.cfg, x.new_nodes)
 end
 
-unvec(::Type{Vec{T,N}}) where {T,N} = T
-unvec(x) = x
+datatype(::Type{Vec{T,N}}) where {T,N} = T
+datatype(x) = x
 
 @generated function roundtrip(f, args...)
   m = meta(Tuple{f,args...})
@@ -149,21 +142,12 @@ unvec(x) = x
 end
 
 @generated function tospmd(f, args...)
-  m = meta(Tuple{f,map(unvec, args)...})
+  m = meta(Tuple{f,map(datatype, args)...})
   ir = IRCode(m)
   ir = varargs!(m, ir)
   argnames!(m, :f, :args)
   ir = spliceargs!(m, ir, (Symbol("#self#"), typeof(roundtrip)))
-  ir = pass(ir)
+  pass(ir)
   update!(m, ir)
   return m.code
 end
-
-# x = @code_ir f(1)
-# pass(x)
-g(x) = x * 2
-function f(x)
-  println(g(x) < 10)
-end
-tospmd(f, vect(1,2,3,4,5))
-# pass(y)
