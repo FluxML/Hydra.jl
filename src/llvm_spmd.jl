@@ -111,7 +111,7 @@ llvmtype(::Type{Float16}) = "half"
 llvmtype(::Type{Float32}) = "float"
 llvmtype(::Type{Float64}) = "double"
 
-@generated function vectorise(f, x::Vec{T, N}, y::Vec{T, N}) where {T, N}
+@generated function vectorise(f, x::Vec{T, N}, y::S) where {T <: Number, S <: Number, N}
     llvmT = llvmtype(T)
     func = llvmins(f, N, T)
     exp = """
@@ -119,12 +119,13 @@ llvmtype(::Type{Float64}) = "double"
     ret <$(N) x $(llvmT)> %3
     """
     return quote
+        xPromoted, yPromoted = promote(x,y)
         Base.@_inline_meta
-        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{T}}, Tuple{NTuple{N,VecElement{T}}, NTuple{N,VecElement{T}}}, x.data, y.data))
+        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{T}}, Tuple{NTuple{N,VecElement{T}}, NTuple{N,VecElement{T}}}, xPromoted.data, yPromoted.data))
     end
 end
 
-@generated function vectorisePredicate(f, x::Vec{T, N}, y::Vec{T, N}) where {T, N}
+@generated function vectorisePredicate(f, x::Vec{T, N}, y::S) where {T <: Number, S <: Number, N}
     llvmT = llvmtype(T)
     func = llvmins(f, N, T)
     exp = """
@@ -133,19 +134,22 @@ end
     ret <$(N) x i8> %4
     """
     return quote
+        xPromoted, yPromoted = promote(x,y)
         Base.@_inline_meta
-        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{Bool}}, Tuple{NTuple{N,VecElement{T}}, NTuple{N,VecElement{T}}}, x.data, y.data))
+        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{Bool}}, Tuple{NTuple{N,VecElement{T}}, NTuple{N,VecElement{T}}}, xPromoted.data, yPromoted.data))
     end
 end
 
 for op in (:+, :-, :*, :/, :div, :rem)
     @eval begin
-        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: Number, T <: Number, N} = vectorise($op, promote(xs,x)...)
+        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: Number, T <: Number, N} = vectorise($op, xs, x)
+        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: Number, T <: Number, N} = vectorise($op, xs, x)
     end
 end
 
 for op in (:(==),:(!=), :(>), :(>=), :(<), :(<=))
     @eval begin
-        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: Number, T <: Number, N} = vectorisePredicate($op, promote(xs,x)...)
+        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: Number, T <: Number, N} = vectorisePredicate($op, xs, x)
+        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: Number, T <: Number, N} = vectorisePredicate($op, xs, x)
     end
 end
