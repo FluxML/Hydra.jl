@@ -15,11 +15,11 @@ struct Vec{T,N} <: AbstractVec{T,N}
   data::NTuple{N,VecElement{T}}
 end
 
-summary(::Vec) = "Vec"
+# summary(::Vec) = "Vec"
 
 Base.getindex(v::Vec, i) = v.data[i].value
 
-vect(xs::T...) where T <: Number = Vec(VecElement.(xs))
+vect(xs::T...) where { T } = Vec(VecElement.(xs))
 vect(xs...) = vect(promote(xs...)...)
 
 unvect(x::Vec{T,N}) where {T,N} = getfield.(x.data, :value)
@@ -37,7 +37,7 @@ end
 
 BitVec{N}(data::T) where {T<:Unsigned,N} = BitVec{N,T}(data)
 
-summary(::BitVec) = "BitVec"
+# summary(::BitVec) = "BitVec"
 
 Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
 

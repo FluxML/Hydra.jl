@@ -111,7 +111,7 @@ llvmtype(::Type{Float16}) = "half"
 llvmtype(::Type{Float32}) = "float"
 llvmtype(::Type{Float64}) = "double"
 
-@generated function vectorise(f, x::Vec{T, N}, y::S) where {T <: Number, S <: Number, N}
+@generated function vectorise(f, x::Vec{T, N}, y::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
     llvmT = llvmtype(T)
     func = llvmins(f, N, T)
     exp = """
@@ -125,7 +125,52 @@ llvmtype(::Type{Float64}) = "double"
     end
 end
 
-@generated function vectorisePredicate(f, x::Vec{T, N}, y::S) where {T <: Number, S <: Number, N}
+@generated function vectorise(f, x::Vec{T, N}, y::Vec{T, N}) where {T <: ScalarTypes, N}
+    llvmT = llvmtype(T)
+    func = llvmins(f, N, T)
+    exp = """
+    %3 = $(func) <$(N) x $(llvmT)> %0, %1
+    ret <$(N) x $(llvmT)> %3
+    """
+    return quote
+        Base.@_inline_meta
+        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{T}}, Tuple{NTuple{N,VecElement{T}}, NTuple{N,VecElement{T}}}, x.data, y.data))
+    end
+end
+
+function llvmconst(N::Integer, ::Type{T}, val) where T
+    typ = llvmtype(T)
+    "<" * join(["$typ $val" for i in 1:N], ", ") * ">"
+end
+
+@generated function llvm_unary_not(x::Vec{T,N}) where {T <: ScalarTypes, N}
+    llvmT = llvmtype(T)
+    func = llvmins(typeof(~), N, T)
+    otherarg = llvmconst(N, T, -1)
+    exp = """
+    %res = $func <$(N) x $(llvmT)> %0, $otherarg
+    ret <$(N) x $(llvmT)> %res
+    """
+    return quote
+        Base.@_inline_meta
+        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{T}}, Tuple{NTuple{N,VecElement{T}}}, x.data))
+    end
+end
+
+@generated function vectorise(f, x::Vec{T, N}) where {T <: ScalarTypes, N}
+    llvmT = llvmtype(T)
+    func = llvmins(f, N, T)
+    exp = """
+    %2 = $(func) <$(N) x $(llvmT)> %0
+    ret <$(N) x $(llvmT)> %2
+    """
+    return quote
+        Base.@_inline_meta
+        Vec(Core.getfield(Base, :llvmcall)($exp, NTuple{N,VecElement{T}}, Tuple{NTuple{N,VecElement{T}}}, x.data))
+    end
+end
+
+@generated function vectorisePredicate(f, x::Vec{T, N}, y::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
     llvmT = llvmtype(T)
     func = llvmins(f, N, T)
     exp = """
@@ -140,16 +185,19 @@ end
     end
 end
 
-for op in (:+, :-, :*, :/, :div, :rem)
+for op in (:+, :-, :*, :/, :div, :rem, :&)
     @eval begin
-        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: Number, T <: Number, N} = vectorise($op, xs, x)
-        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: Number, T <: Number, N} = vectorise($op, xs, x)
+        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, xs, x)
+        spmd(::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorise($op, xs, ys)
+        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, xs, x)
     end
 end
 
 for op in (:(==),:(!=), :(>), :(>=), :(<), :(<=))
     @eval begin
-        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: Number, T <: Number, N} = vectorisePredicate($op, xs, x)
-        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: Number, T <: Number, N} = vectorisePredicate($op, xs, x)
+        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, xs, x)
+        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, xs, x)
     end
 end
+
+spmd(::typeof(~), xs::Vec{T, N}) where {T <: ScalarTypes, N} = llvm_unary_not(xs)

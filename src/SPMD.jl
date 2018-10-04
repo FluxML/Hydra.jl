@@ -1,11 +1,11 @@
 __precompile__(false)
 
 module SPMD
-
   using MacroTools
   using MacroTools: @forward
-  using IRTools: meta, varargs!, argnames!, spliceargs!, update!, IR, @code_ir
-  using IRTools: blocks, map, xcall
+  using IRTools: meta, varargs!, argnames!, spliceargs!, update!, IR, @code_ir, iscontrol
+  using IRTools: blocks, map, xcall, isgoto, block, blockidx, blocks, successors, label, Block
+  using IRTools.Wrap: CFG
   import Core.Compiler: userefs
 
   include("vec.jl")
