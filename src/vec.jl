@@ -31,6 +31,8 @@ isvect(x) = false
 datatype(::Type{Vec{T,N}}) where {T,N} = T
 datatype(x) = x
 
+similar(::Type{Vec{T,N}}) where {T,N} = vect(zeros(T, N)...)
+
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
 end
@@ -50,7 +52,7 @@ Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
 end
 
 # TODO use smaller words where possible
-vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
+# vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
 import Base.convert, Base.promote_rule
 convert(::Type{Vec{T, N}}, x::T) where {N, T} = scalartovect(x,N)

@@ -5,6 +5,7 @@ module SPMD
   using MacroTools: @forward
   using IRTools: meta, varargs!, argnames!, spliceargs!, update!, IR, @code_ir, iscontrol
   using IRTools: blocks, map, xcall, isgoto, block, blockidx, blocks, successors, label, Block
+  using IRTools: block!
   using IRTools.Wrap: CFG
   import Core.Compiler: userefs
 
