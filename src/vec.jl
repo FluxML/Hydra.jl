@@ -1,4 +1,9 @@
+# Unwrap vecs into tuples
+data(x) = x
+
 abstract type AbstractVec{T,N} end
+
+data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
 
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
 
@@ -13,6 +18,7 @@ Base.iterate(v::AbstractVec, i = 1) =
 
 struct Vec{T,N} <: AbstractVec{T,N}
   data::NTuple{N,VecElement{T}}
+  Vec{T,N}(data::NTuple{N,VecElement{T}}) where {T,N} = new(data)
 end
 
 # summary(::Vec) = "Vec"
@@ -22,14 +28,10 @@ Base.getindex(v::Vec, i) = v.data[i].value
 vect(xs::T...) where { T } = Vec(VecElement.(xs))
 vect(xs...) = vect(promote(xs...)...)
 
-unvect(x::Vec{T,N}) where {T,N} = getfield.(x.data, :value)
-unvect(x) = x
-scalartovect(x, n) = vect(repeat([x], n)...)
-isvect(x::Vec{T,N}) where {T,N} = true
-isvect(x) = false
+Vec{T,N}(x::T) where {T,N} = Vec(ntuple(_ -> VecElement(x), N))
+Vec{T,N}(x) where {T,N} = Vec{T,N}(convert(T, x))
 
-datatype(::Type{Vec{T,N}}) where {T,N} = T
-datatype(x) = x
+data(x::Vec) = getfield.(x.data, :value)
 
 similar(::Type{Vec{T,N}}) where {T,N} = vect(zeros(T, N)...)
 
@@ -55,7 +57,6 @@ end
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
 import Base.convert, Base.promote_rule
-convert(::Type{Vec{T, N}}, x::T) where {N, T} = scalartovect(x,N)
-convert(::Type{Vec{T, N}}, x::S) where {N, T, S} = scalartovect(T(x),N)
-convert(::Type{Vec{T, N}}, x::Vec{S, N}) where {S,T,N} = Vec(VecElement.(T.(unvect(x))))
+convert(::Type{Vec{T, N}}, x) where {N, T} = Vec{T,N}(x)
+convert(::Type{Vec{T, N}}, x::Vec{S, N}) where {S,T,N} = Vec(VecElement.(T.(data(x))))
 promote_rule(::Type{Vec{S,N}}, ::Type{T}) where {S,T,N} = Vec{promote_type(T,S),N}
