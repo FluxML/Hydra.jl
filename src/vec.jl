@@ -33,8 +33,6 @@ Vec{T,N}(x) where {T,N} = Vec{T,N}(convert(T, x))
 
 data(x::Vec) = getfield.(x.data, :value)
 
-similar(::Type{Vec{T,N}}) where {T,N} = vect(zeros(T, N)...)
-
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
 end
