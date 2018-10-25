@@ -1,14 +1,14 @@
 using Core.Compiler: PhiNode, GotoNode, GotoIfNot, ReturnNode, SSAValue, BasicBlock, Argument
 
-spmd(::typeof(println), xs...) where {T,N} = println(unvect.(xs)...)
-spmd(::typeof(print), xs...) where {T,N} = print(unvect.(xs)...)
+spmd(::typeof(println), xs...) where {T,N} = println(data.(xs)...)
+spmd(::typeof(print), xs...) where {T,N} = print(data.(xs)...)
 
 is_latch(block_cfg, block_id) = any(map(succ -> succ < block_id, block_cfg.succs))
 is_header(block_cfg, block_id) = any(map(pred -> pred > block_id, block_cfg.preds))
 
 function spmd(f, args...)
   # println(f, args)
-  if any(isvect, args)
+  if any(x -> x isa AbstractVec, args)
     tospmd(f, args...)
   else
     f(args...)
@@ -250,8 +250,11 @@ function pass_call(ir)
   map(transform_call, ir)
 end
 
+unwraptype(::Type{Vec{T,N}}) where {T,N} = T
+unwraptype(x) = x
+
 @generated function tospmd(f, args...)
-  m = meta(Tuple{f,map(datatype, args)...})
+  m = meta(Tuple{f,unwraptype.(args)...})
   ir = IR(m)
   ir, old_to_new_block = pass_if(ir)
   ir = pass_for_loops_gotos(ir, old_to_new_block)
