@@ -21,11 +21,13 @@ struct Vec{T,N} <: AbstractVec{T,N}
   Vec{T,N}(data::NTuple{N,VecElement{T}}) where {T,N} = new(data)
 end
 
+Vec(xs::NTuple{N,VecElement{T}}) where {T,N} = Vec{T,N}(xs)
+
 # summary(::Vec) = "Vec"
 
 Base.getindex(v::Vec, i) = v.data[i].value
 
-vect(xs::T...) where { T } = Vec(VecElement.(xs))
+vect(xs::T...) where {T} = Vec(VecElement.(xs))
 vect(xs...) = vect(promote(xs...)...)
 
 Vec{T,N}(x::T) where {T,N} = Vec(ntuple(_ -> VecElement(x), N))
@@ -56,5 +58,5 @@ end
 
 import Base.convert, Base.promote_rule
 convert(::Type{Vec{T, N}}, x) where {N, T} = Vec{T,N}(x)
-convert(::Type{Vec{T, N}}, x::Vec{S, N}) where {S,T,N} = Vec(VecElement.(T.(data(x))))
+convert(::Type{Vec{T, N}}, x::Vec{S, N}) where {S,T,N} = vect(T.(data(x))...)
 promote_rule(::Type{Vec{S,N}}, ::Type{T}) where {S,T,N} = Vec{promote_type(T,S),N}
