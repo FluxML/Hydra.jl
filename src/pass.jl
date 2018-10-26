@@ -15,6 +15,18 @@ function spmd(f, args...)
   end
 end
 
+function get_block_for_statement(ir::IR)
+  block_for_statement = Dict{SSAValue, Int64}()
+  for b in blocks(ir)
+    for (ssavalue, stmt) in b
+      if ssavalue != nothing
+        block_for_statement[ssavalue] = b.id
+      end
+    end
+  end
+  block_for_statement
+end
+
 function add_cond_for_block(block_to_conds::Dict{Int64, Vector{Tuple{SSAValue, Bool}}}, block_id, cond)
   if haskey(block_to_conds, block_id)
     if !(cond in block_to_conds[block_id])
@@ -28,16 +40,21 @@ end
 function select(conds::Vec{Bool, N}, first_vals::Vec{T,N}, second_vals::Vec{S,N}) where {T,S,N}
   result = zeros(promote_type(T,S), N)
   for i in range(1, length=N)
-    cond = conds.data[i].value
-    first_val = first_vals.data[i].value
-    second_val = second_vals.data[i].value
-    if cond
-      result[i] = first_val
+    if conds[i]
+      result[i] = first_vals[i]
     else
-      result[i] = second_val
+      result[i] = second_vals[i]
     end
   end
   return vect(result...)
+end
+
+function select(conds::Vec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
+  if any(conds)
+    first_val
+  else
+    second_val
+  end
 end
 
 conds_any_true(conds) = any(conds)
@@ -175,6 +192,62 @@ function pass_for_loops_gotos(ir, old_to_new_block)
   new_ir
 end
 
+function get_phinodes_values(ir)
+  phinodes_values = Dict{SSAValue, SSAValue}()
+  for b in blocks(ir)
+    for (ssavalue, stmt) in b
+      if stmt.expr isa PhiNode
+        in_loop_values = map(x -> x[1] > b.id && x[2] isa SSAValue && x[2], zip(stmt.expr.edges, stmt.expr.values))
+        in_loop_values = filter(x -> x != false, in_loop_values)
+        for value in in_loop_values
+          phinodes_values[value] = ssavalue
+        end
+      end
+    end
+  end
+  phinodes_values
+end
+
+function pass_for_loops_phinodes(ir, block_to_cond)
+  block_for_statement = get_block_for_statement(ir)
+  phinodes_values = get_phinodes_values(ir)
+  new_ir = new_ir = IR(ir.lines, ir.args)
+  old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
+  for b in blocks(ir)
+    for (ssavalue, stmt) in b
+      if stmt.expr isa GotoIfNot
+        new_stmt = GotoIfNot(old_to_new_ssavalue[stmt.expr.cond], stmt.expr.dest)
+        push!(new_ir, new_stmt)
+      elseif stmt.expr isa GotoNode
+        push!(new_ir, stmt)
+      elseif stmt.expr isa ReturnNode
+        push!(new_ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
+      elseif stmt.expr isa PhiNode
+        push!(new_ir, stmt)
+        new_ssavalue = SSAValue(length(new_ir.defs))
+        old_to_new_ssavalue[ssavalue] = new_ssavalue
+      else
+        new_args = map(x->if x isa SSAValue old_to_new_ssavalue[x] else x end,stmt.expr.args)
+        new_stmt = Expr(:call, new_args[1], new_args[2:length(new_args)]...)
+        push!(new_ir, new_stmt)
+        new_ssavalue = SSAValue(length(new_ir.defs))
+        if haskey(phinodes_values, ssavalue)
+          cond = old_to_new_ssavalue[block_to_cond[b.id]]
+          header_value = old_to_new_ssavalue[phinodes_values[ssavalue]]
+          push!(new_ir, xcall(SPMD, :select, cond, new_ssavalue, header_value))
+          new_ssavalue = SSAValue(length(new_ir.defs))
+        end
+        old_to_new_ssavalue[ssavalue] = new_ssavalue
+      end
+    end
+    if (b.id != length(blocks(ir)))
+      block!(new_ir)
+    end
+  end
+  new_ir = map(x->fix_phinode(x, old_to_new_ssavalue), new_ir)
+  new_ir
+end
+
 function pass_if(ir)
   negated_conditions = NegatedConditions()
   block_to_conds = get_conditions_for_blocks(ir)
@@ -233,11 +306,13 @@ function pass_if(ir)
         push!(new_ir, new_stmt)
         new_ssavalue = SSAValue(length(new_ir.defs))
         old_to_new_ssavalue[ssavalue] = new_ssavalue
+      elseif stmt.expr isa PiNode
+        #TODO
       end
     end
   end
   new_ir = map(x->fix_phinode(x, old_to_new_ssavalue, old_to_new_block), new_ir)
-  (new_ir, old_to_new_block)
+  (new_ir, old_to_new_block, block_to_cond)
 end
 
 function pass_call(ir)
@@ -253,12 +328,17 @@ end
 unwraptype(::Type{Vec{T,N}}) where {T,N} = T
 unwraptype(x) = x
 
+function pass(ir)
+  ir, old_to_new_block, block_to_cond = pass_if(ir)
+  ir = pass_for_loops_phinodes(ir, block_to_cond)
+  ir = pass_call(ir)
+  ir = pass_for_loops_gotos(ir, old_to_new_block)
+end
+
 @generated function tospmd(f, args...)
   m = meta(Tuple{f,unwraptype.(args)...})
   ir = IR(m)
-  ir, old_to_new_block = pass_if(ir)
-  ir = pass_for_loops_gotos(ir, old_to_new_block)
-  ir = pass_call(ir)
+  ir = pass(ir)
   ir = varargs!(m, ir)
   argnames!(m, :f, :args)
   ir = spliceargs!(m, ir, (Symbol("#self#"), typeof(tospmd)))
@@ -269,29 +349,33 @@ end
 using IRTools: @code_ir
 
 function f(x)
-  a = x +1
-  if x > 0
+  a = x + 1
+  if a > 10
     a += 1000
-  else
-    a -= 1000
-  end
-
-  if a > 0
-    a -= 10
+  elseif a > 5
+    a += 100
   else
     a += 10
+  end
+
+  if x > 0
+    a += 10
+  else
+    a -= 10
   end
   return a
 end
 
 function g(x)
   a = x + 1
-  i = 1
+  i = 0
   while x > i
-    if i < 3
-      a += x + 1
+    if x >= 10
+      a += 3
+    elseif x >= 5
+      a += 2
     else
-      a += x + 2
+      a += 1
     end
     i += 1
   end
@@ -299,10 +383,12 @@ function g(x)
 end
 
 
-function naive_spmd(f, args)
-  map(f, args)
-end
+# function naive_spmd(f, args)
+#   map(f, args)
+# end
+code = @code_ir g(5)
 # println(code)
+# println(pass(code))
 # println(get_vector_values(code, Dict{SSAValue, Bool}()))
 # println(pass_if(code)...)
 # println(pass_for_loops_gotos(pass_if(code)...))
@@ -311,9 +397,13 @@ end
 # println(pass_call(pass_for_loops_gotos(pass_if(code)...)))
 # println(tospmd(g, vect(3,4,5,6)))
 # println(tospmd(f, vect(-6,-11,4.4,6)))
-using BenchmarkTools
-
-tospmd(g, vect(5,5,5,5))
-
-@btime tospmd(g, vect(5,5,5,5,5,5,5,5))
-@btime naive_spmd(g, [5,5,5,5,5,5,5,5])
+# using BenchmarkTools
+#
+# input = Vector{Int16}(repeat([256], 8))
+#
+# println(tospmd(f, vect(1,6,11,-1)))
+#
+# @btime tospmd(g, Vec{Int16, 8}(256))
+# @btime naive_spmd(g, input)
+# println(tospmd(g, vect(3,4,5,10)))
+# println(naive_spmd(g, input))
