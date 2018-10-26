@@ -386,7 +386,7 @@ end
 # function naive_spmd(f, args)
 #   map(f, args)
 # end
-code = @code_ir g(5)
+# code = @code_ir g(5)
 # println(code)
 # println(pass(code))
 # println(get_vector_values(code, Dict{SSAValue, Bool}()))
