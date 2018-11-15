@@ -520,3 +520,11 @@ end
 # @btime naive_spmd(g, input)
 # println(spmd(g, vect(3,4,5,10)))
 # println(naive_spmd(g, input))
+
+using InteractiveUtils
+using InteractiveUtils: typesof
+
+macro code_spmd(ex)
+  @capture(ex, f_(xs__)) || error("@code_spmd f(xs...)")
+  :(IRTools.code_ir($(esc(f)), typesof($(xs...))) |> pass)
+end
