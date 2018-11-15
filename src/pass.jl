@@ -26,7 +26,7 @@ function add_cond_for_block(block_to_conds::Dict{Int64, Vector{Tuple{Union{SSAVa
   end
 end
 
-function select(conds::Vec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
+function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
   result = zeros(T,N)
   for i in range(1, length=N)
     if !conds[i]
@@ -38,7 +38,7 @@ function select(conds::Vec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::
   return vect(result...)
 end
 
-function select(conds::Vec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
+function select(conds::SVec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
   if any(conds)
     first_val
   else
@@ -404,7 +404,7 @@ function pass_call(ir::IR, block_to_cond)
   new_ir
 end
 
-unwraptype(::Type{Vec{T,N}}) where {T,N} = T
+unwraptype(::Type{SVec{T,N}}) where {T,N} = T
 unwraptype(x) = x
 
 function pass(ir)
@@ -472,7 +472,7 @@ end
 #
 # println(spmd(f, vect(1,6,11,-1)))
 #
-# @btime spmd(g, Vec{Int16, 8}(256))
+# @btime spmd(g, SVec{Int16, 8}(256))
 # @btime naive_spmd(g, input)
 # println(spmd(g, vect(3,4,5,10)))
 # println(naive_spmd(g, input))

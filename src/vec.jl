@@ -12,6 +12,7 @@ abstract type AbstractVec{T,N} end
 data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
 
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
+Base.getindex(xs::AbstractVec, i::Integer) = data(xs)[i]
 
 function Base.show(io::IO, v::AbstractVec)
   print(io, summary(v), "{")
@@ -23,34 +24,31 @@ end
 Base.iterate(v::AbstractVec, i = 1) =
   i > length(v) ? nothing : (v[i], i+1)
 
-struct Vec{T,N} <: AbstractVec{T,N}
+struct SVec{T,N} <: AbstractVec{T,N}
   data::NTuple{N,VecElement{T}}
-  Vec{T,N}(data::NTuple{N,VecElement{T}}) where {T,N} = new(data)
+  SVec{T,N}(data::NTuple{N,VecElement{T}}) where {T,N} = new(data)
 end
+
+SVec(xs::NTuple{N,VecElement{T}}) where {T,N} = SVec{T,N}(xs)
+SVec(xs::NTuple{N,T}) where {T,N} = SVec{T,N}(map(VecElement, xs))
+
+SVec{T,N}(x::T) where {T,N} = SVec(ntuple(_ -> VecElement(x), N))
+SVec{T,N}(x) where {T,N} = SVec{T,N}(convert(T, x))
+
+vect(xs::T...) where {T} = SVec(xs)
+
+Base.summary(::SVec) = "SVec"
 
 struct HoleyVec{T,N} <: AbstractVec{T,N}
   data::NTuple{N,Union{Nothing,VecElement{T}}}
   HoleyVec{T,N}(data::NTuple{N,Union{Nothing, VecElement{T}}}) where {T,N} = new(data)
 end
 
-Vec(xs::NTuple{N,VecElement{T}}) where {T,N} = Vec{T,N}(xs)
 HoleyVec(xs::NTuple{N,Union{Nothing,VecElement{T}}}) where {T,N} = HoleyVec{T,N}(xs)
 
-# summary(::Vec) = "Vec"
-
-Base.getindex(v::Vec, i) = v.data[i].value
-Base.getindex(v::HoleyVec, i) = if v.data[i] isa Nothing v.data[i] else v.data[i].value end
-
-# vect(xs::AbstractRange...) =
-
 vect(xs::Union{Nothing, T}...) where {T} = HoleyVec(map(x -> if x isa Nothing x else VecElement(x) end, xs))
-vect(xs::T...) where {T} = Vec(VecElement.(xs))
-vect(xs...) = vect(promote(xs...)...)
 
-Vec{T,N}(x::T) where {T,N} = Vec(ntuple(_ -> VecElement(x), N))
-Vec{T,N}(x) where {T,N} = Vec{T,N}(convert(T, x))
-
-data(xs::Vec) = getfield.(xs.data, :value)
+data(xs::SVec) = getfield.(xs.data, :value)
 data(xs::HoleyVec) = map(x -> if x isa Nothing x else x.data.value end, xs)
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
@@ -75,26 +73,26 @@ end
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
 import Base.convert, Base.promote_rule
-convert(::Type{Vec{T,N}}, x) where {T,N} = Vec{T,N}(x)
-convert(::Type{Vec{T,N}}, xs::Vec{S,N}) where {T,S,N} = vect(T.(data(xs))...)
+convert(::Type{SVec{T,N}}, x) where {T,N} = SVec{T,N}(x)
+convert(::Type{SVec{T,N}}, xs::SVec{S,N}) where {T,S,N} = vect(T.(data(xs))...)
 
-convert(::Type{HoleyVec{T,N}}, xs::Vec{S,N}) where {T,S,N} = HoleyVec(map(x -> VecElement(T(x.value)), xs.data))
+convert(::Type{HoleyVec{T,N}}, xs::SVec{S,N}) where {T,S,N} = HoleyVec(map(x -> VecElement(T(x.value)), xs.data))
 convert(::Type{HoleyVec{T,N}}, xs::HoleyVec{S,N}) where {T,S,N} = HoleyVec(map(x->if x isa Nothing x else VecElement(T(x.value)) end, xs.data))
 
-promote_rule(::Type{Vec{S,N}}, ::Type{T}) where {S,T<:ScalarTypes,N} = Vec{promote_type(T,S),N}
-promote_rule(::Type{Vec{S,N}}, ::Type{Vec{T,N}}) where {S,T,N} = Vec{promote_type(T,S),N}
-promote_rule(::Type{HoleyVec{S,N}}, ::Type{Vec{T,N}}) where {S,T,N} = HoleyVec{promote_type(T,S),N}
+promote_rule(::Type{SVec{S,N}}, ::Type{T}) where {S,T<:ScalarTypes,N} = SVec{promote_type(T,S),N}
+promote_rule(::Type{SVec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = SVec{promote_type(T,S),N}
+promote_rule(::Type{HoleyVec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = HoleyVec{promote_type(T,S),N}
 promote_rule(::Type{HoleyVec{S,N}}, ::Type{HoleyVec{T,N}}) where {S,T,N} = HoleyVec{promote_type(T,S),N}
 
 import Base.(:)
-# function (:)(start::Vec{T,N}, step::Vec{T,N}, stop::Vec{T,N}) where {T <: ScalarTypes,N}
+# function (:)(start::SVec{T,N}, step::SVec{T,N}, stop::SVec{T,N}) where {T <: ScalarTypes,N}
 #     vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop)))
 # end
-(:)(start::Vec{T,N}, step::Vec{T,N}, stop::Vec{T,N}) where {T,N} = vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop))...)
-(:)(start::Vec{T,N}, stop::Vec{T,N}) where {T,N} = (:)(start, Vec{T,N}(1), stop)
+(:)(start::SVec{T,N}, step::SVec{T,N}, stop::SVec{T,N}) where {T,N} = vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop))...)
+(:)(start::SVec{T,N}, stop::SVec{T,N}) where {T,N} = (:)(start, SVec{T,N}(1), stop)
 
-(:)(start::T, stop::Vec{S,N}) where {T,S,N} = (:)(promote(start, stop)...)
-(:)(start::Vec{T,N}, stop::S) where {T,S,N} = (:)(promote(start, stop)...)
+(:)(start::T, stop::SVec{S,N}) where {T,S,N} = (:)(promote(start, stop)...)
+(:)(start::SVec{T,N}, stop::S) where {T,S,N} = (:)(promote(start, stop)...)
 
 spmd(mask, ::typeof(:), start, step, stop) = start:step:stop
 spmd(mask, ::typeof(:), start, stop) = start:stop
