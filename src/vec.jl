@@ -24,6 +24,20 @@ end
 Base.iterate(v::AbstractVec, i = 1) =
   i > length(v) ? nothing : (v[i], i+1)
 
+
+struct Vec{T,N} <: AbstractVec{T,N}
+  data::NTuple{N,T}
+  Vec{T,N}(data::NTuple{N,T}) where {T,N} = new(data)
+end
+
+data(vec::Vec) = vec.data
+
+Vec(xs::Tuple) = Vec{Union{map(typeof,xs)...},length(xs)}(xs)
+
+vect(xs...) = Vec(xs)
+
+Base.summary(::Vec{T}) where T = "Vec{$T}"
+
 struct SVec{T,N} <: AbstractVec{T,N}
   data::NTuple{N,VecElement{T}}
   SVec{T,N}(data::NTuple{N,VecElement{T}}) where {T,N} = new(data)
@@ -37,6 +51,8 @@ SVec{T,N}(x) where {T,N} = SVec{T,N}(convert(T, x))
 
 vect(xs::T...) where {T} = SVec(xs)
 
+data(xs::SVec) = getfield.(xs.data, :value)
+
 Base.summary(::SVec) = "SVec"
 
 struct HoleyVec{T,N} <: AbstractVec{T,N}
@@ -48,7 +64,6 @@ HoleyVec(xs::NTuple{N,Union{Nothing,VecElement{T}}}) where {T,N} = HoleyVec{T,N}
 
 vect(xs::Union{Nothing, T}...) where {T} = HoleyVec(map(x -> if x isa Nothing x else VecElement(x) end, xs))
 
-data(xs::SVec) = getfield.(xs.data, :value)
 data(xs::HoleyVec) = map(x -> if x isa Nothing x else x.data.value end, xs)
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
@@ -57,7 +72,7 @@ end
 
 BitVec{N}(data::T) where {T<:Unsigned,N} = BitVec{N,T}(data)
 
-# summary(::BitVec) = "BitVec"
+summary(::BitVec) = "BitVec"
 
 Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
 
