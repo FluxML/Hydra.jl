@@ -33,11 +33,13 @@ function while_loop(x)
   a
 end
 
+mask = SPMD.vect(true,true,true,true)
+
 input = Vector{Int32}([1,6,11,-1])
-@test SPMD.tospmd(if_statement, SPMD.vect(input...)) == SPMD.vect(map(if_statement, input)...)
+@test SPMD.tospmd(mask, if_statement, SPMD.vect(input...)) == SPMD.vect(map(if_statement, input)...)
 
 input = Vector{Int32}([5,5,5,5])
-@test SPMD.tospmd(while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)
+@test SPMD.tospmd(mask, while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)
 
 input = Vector{Int32}([1,5,12,-3])
-@test SPMD.tospmd(while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)
+@test SPMD.tospmd(mask, while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)

@@ -1,10 +1,3 @@
-const BoolTypes = Union{Bool}
-const IntTypes = Union{Int8, Int16, Int32, Int64, Int128}
-const UIntTypes = Union{UInt8, UInt16, UInt32, UInt64, UInt128}
-const IntegerTypes = Union{BoolTypes, IntTypes, UIntTypes}
-const FloatingTypes = Union{Float16, Float32, Float64}
-const ScalarTypes = Union{IntegerTypes, FloatingTypes}
-
 llvmins(::Type{typeof(+)}, N, ::Type{T}) where {T <: IntegerTypes} = "add"
 llvmins(::Type{typeof(-)}, N, ::Type{T}) where {T <: IntegerTypes} = "sub"
 llvmins(::Type{typeof(*)}, N, ::Type{T}) where {T <: IntegerTypes} = "mul"
@@ -170,21 +163,29 @@ end
     end
 end
 
-for op in (:+, :-, :*, :/, :div, :rem, :&)
+for op in (:+, :-, :*, :/, :div, :rem, :&, :|)
     @eval begin
-        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(xs,x)...)
-        spmd(::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorise($op, promote(xs,ys)...)
-        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(x,xs)...)
+        # spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(xs,x)...)
+        # spmd(::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorise($op, promote(xs,ys)...)
+        # spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(x,xs)...)
+        spmd(mask::Vec{Bool, N}, ::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(xs,x)...)
+        spmd(mask::Vec{Bool, N}, ::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorise($op, promote(xs,ys)...)
+        spmd(mask::Vec{Bool, N}, ::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(x,xs)...)
     end
 end
 
 for op in (:(==),:(!=), :(>), :(>=), :(<), :(<=))
     @eval begin
-        spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,x)...)
-        spmd(::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,ys)...)
-        spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(x,xs)...)
+        # spmd(::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,x)...)
+        # spmd(::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,ys)...)
+        # spmd(::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(x,xs)...)
+        spmd(mask::Vec{Bool, N}, ::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,x)...)
+        spmd(mask::Vec{Bool, N}, ::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,ys)...)
+        spmd(mask::Vec{Bool, N}, ::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(x,xs)...)
     end
 end
 
 # spmd(::typeof(~), xs::Vec{T, N}) where {T <: ScalarTypes, N} = llvm_unary_not(xs)
-spmd(::typeof(~), xs::Vec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
+# spmd(::typeof(~), xs::Vec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
+spmd(mask::Vec{Bool, N}, ::typeof(~), xs::Vec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
+spmd(mask::Vec{Bool, N}, ::typeof(Base.not_int), xs::Vec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
