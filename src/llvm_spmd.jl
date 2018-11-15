@@ -171,6 +171,7 @@ for op in (:+, :-, :*, :/, :div, :rem, :&, :|)
         spmd(mask::Vec{Bool, N}, ::typeof($op), xs::Vec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(xs,x)...)
         spmd(mask::Vec{Bool, N}, ::typeof($op), xs::Vec{T, N}, ys::Vec{T, N}) where {T <: ScalarTypes, N} = vectorise($op, promote(xs,ys)...)
         spmd(mask::Vec{Bool, N}, ::typeof($op), x::S, xs::Vec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorise($op, promote(x,xs)...)
+        spmd(mask::Vec{Bool}, ::typeof($op), x::ScalarTypes, y::ScalarTypes) = $op(x, y)
     end
 end
 
