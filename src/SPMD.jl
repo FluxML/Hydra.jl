@@ -9,6 +9,8 @@ module SPMD
   using IRTools.Wrap: CFG
   import Core.Compiler: userefs
 
+  export @spmd, lanewidth, lane
+
   include("vec.jl")
 
   include("interface.jl")

@@ -1,21 +1,13 @@
-struct Context{N}
-  mask::Vec{Bool,N}
+macro spmd(n, ex)
+  :(let
+      mask = vect(ntuple(_ -> true, $(esc(n)))...)
+      spmd(mask, () -> $(esc(ex)))
+      nothing
+  end)
 end
-
-Context{N}() where N = Context(vect(ntuple(_->true,N)...))
-
-lanewidth(::Context{N}) where N = N
 
 lanewidth() = 1
 lane() = 1
 
-spmd(cx::Context, ::typeof(lanewidth)) = lanewidth(cx)
-spmd(cx::Context, ::typeof(lane)) = vect(ntuple(identity, lanewidth(cx))...)
-
-default_lanewidth() = 4 # TODO use CpuId
-# how do we choose something sensible for a data type?
-
-# function spmd(f, x...)
-#   spmd(Context{default_lanewidth()}, f, x...)
-#   return
-# end
+spmd(mask, ::typeof(lanewidth)) = length(mask)
+spmd(mask, ::typeof(lane)) = vect(ntuple(identity, length(mask))...)
