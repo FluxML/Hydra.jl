@@ -464,9 +464,9 @@ end
   m = meta(Tuple{f,unwraptype.(args)...})
   ir = IR(m)
   ir = pass(ir)
-  argnames!(m, :mask, :f, :args)
-  ir = spliceargs!(m, ir, (:mask, mask), (Symbol("#self#"), typeof(spmd)))
-  ir = varargs!(m, ir, length(args) + 2)
+  argnames!(m, :f, :args)
+  ir = spliceargs!(m, ir, (Symbol("#self#"), typeof(spmd)), (:mask, mask))
+  ir = varargs!(m, ir, 3)
   update!(m, ir)
   return m.code
 end
