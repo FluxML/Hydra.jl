@@ -1,3 +1,15 @@
+asvec(mask, x::AbstractVec) = x
+asvec(mask, x) = vect(ntuple(_ -> x, length(mask))...)
+
+function spmdmap(mask, f, args...)
+  vargs = map(x -> asvec(mask, x), args)
+  vect(map((m, a...) -> m ? f(a...) : nothing, mask, vargs...)...)
+end
+
+spmd(mask, ::typeof(println), xs...) = spmdmap(mask, println, xs...)
+spmd(mask, ::typeof(print), xs...) = spmdmap(mask, print, xs...)
+spmd(mask, ::typeof(repr), xs...) = spmdmap(mask, repr, xs...)
+
 function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}) where {T, N}
   splat_and_vect(xs) = vect(xs...)
   map(zip(mask, iter)) do x
@@ -38,6 +50,3 @@ spmd(mask, ::typeof(getfield), x::SVec{T,N}, name::SVec{S,N}) where {S,T,N} = ve
 
 spmd(mask, ::typeof(getfield), x::HoleyVec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, SVec{S,N}(name))
 spmd(mask, ::typeof(getfield), x::HoleyVec{T,N}, name::HoleyVec{S,N}) where {S,T,N} = masked_getfield(mask, x, name)
-
-spmd(mask, ::typeof(println), xs...) where {T,N} = println(data.(xs)...)
-spmd(mask, ::typeof(print), xs...) where {T,N} = print(data.(xs)...)

@@ -17,7 +17,7 @@ Base.getindex(xs::AbstractVec, i::Integer) = data(xs)[i]
 function Base.show(io::IO, v::AbstractVec)
   print(io, summary(v), "{")
   tostring(x) = if x isa Nothing "nothing" else x end
-  join(io, tostring.(v), ", ")
+  join(io, sprint.(show, v), ", ")
   print(io, "}")
 end
 
@@ -50,6 +50,7 @@ SVec{T,N}(x::T) where {T,N} = SVec(ntuple(_ -> VecElement(x), N))
 SVec{T,N}(x) where {T,N} = SVec{T,N}(convert(T, x))
 
 vect(xs::T...) where {T} = SVec(xs)
+# vect(xs::T...) where {T} = Vec(xs)
 
 data(xs::SVec) = getfield.(xs.data, :value)
 
@@ -64,7 +65,7 @@ HoleyVec(xs::NTuple{N,Union{Nothing,VecElement{T}}}) where {T,N} = HoleyVec{T,N}
 
 vect(xs::Union{Nothing, T}...) where {T} = HoleyVec(map(x -> if x isa Nothing x else VecElement(x) end, xs))
 
-data(xs::HoleyVec) = map(x -> if x isa Nothing x else x.data.value end, xs)
+data(xs::HoleyVec) = map(x -> if x isa Nothing x else x.value end, xs.data)
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
@@ -72,7 +73,7 @@ end
 
 BitVec{N}(data::T) where {T<:Unsigned,N} = BitVec{N,T}(data)
 
-summary(::BitVec) = "BitVec"
+Base.summary(::BitVec) = "BitVec"
 
 Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
 
