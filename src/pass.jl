@@ -1,61 +1,8 @@
 using Core.Compiler: PhiNode, GotoNode, GotoIfNot, ReturnNode, SSAValue, BasicBlock, Argument, PiNode
 using IRTools
 
-function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}) where {T, N}
-  splat_and_vect(xs) = vect(xs...)
-  map(zip(mask, iter)) do x
-    if x[1]
-      iterate(x[2])
-    else
-      nothing
-    end
-  end |> splat_and_vect
-end
-
-function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}, state::Vec{S,N}) where {T, S, N}
-  splat_and_vect(xs) = vect(xs...)
-  map(zip(mask, iter, state)) do x
-    if x[1]
-      iterate(x[2], x[3])
-    else
-      nothing
-    end
-  end |> splat_and_vect
-end
-
-function masked_getfield(mask, xs::HoleyVec{T,N}, names) where {T,N}
-  splat_and_vect(xs) = vect(xs...)
-  map(zip(mask, xs, names)) do (m, x, name)
-    if m
-      getfield(x, name)
-    else
-      nothing
-    end
-  end |> splat_and_vect
-end
-
-function spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::S) where {S,T,N}
-  vect(getfield.(x,name)...)
-end
-spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::Vec{S,N}) where {S,T,N} = vect(getfield.(x, name)...)
-
-spmd(mask, ::typeof(getfield), x::HoleyVec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, Vec{S,N}(name))
-spmd(mask, ::typeof(getfield), x::HoleyVec{T,N}, name::HoleyVec{S,N}) where {S,T,N} = masked_getfield(mask, x, name)
-
-spmd(mask, ::typeof(println), xs...) where {T,N} = println(data.(xs)...)
-spmd(mask, ::typeof(print), xs...) where {T,N} = print(data.(xs)...)
-
 is_latch(block_cfg, block_id) = any(map(succ -> succ < block_id, block_cfg.succs))
 is_header(block_cfg, block_id) = any(map(pred -> pred > block_id, block_cfg.preds))
-
-function spmd(mask, f, args...)
-  println(f, " ", args)
-  if any(x -> x isa AbstractVec, args)
-    tospmd(mask, f, args...)
-  else
-    f(args...)
-  end
-end
 
 function get_block_for_statement(ir::IR)
   block_for_statement = Dict{SSAValue, Int64}()
@@ -79,7 +26,7 @@ function add_cond_for_block(block_to_conds::Dict{Int64, Vector{Tuple{Union{SSAVa
   end
 end
 
-function select(conds::Vec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
+function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
   result = zeros(T,N)
   for i in range(1, length=N)
     if !conds[i]
@@ -91,7 +38,7 @@ function select(conds::Vec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::
   return vect(result...)
 end
 
-function select(conds::Vec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
+function select(conds::SVec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
   if any(conds)
     first_val
   else
@@ -457,26 +404,25 @@ function pass_call(ir::IR, block_to_cond)
   new_ir
 end
 
-unwraptype(::Type{Vec{T,N}}) where {T,N} = T
+unwraptype(::Type{SVec{T,N}}) where {T,N} = T
 unwraptype(x) = x
 
 function pass(ir)
   ir, block_to_cond = pass_create_masks(ir)
   ir = pass_call(ir, block_to_cond)
-  println(ir)
   ir, old_to_new_block = pass_if(ir, block_to_cond)
   ir = pass_loops_result_value(ir, block_to_cond)
   ir = pass_for_loops_gotos(ir, old_to_new_block)
   ir
 end
 
-@generated function tospmd(mask, f, args...)
+@generated function spmd(mask, f, args...)
   m = meta(Tuple{f,unwraptype.(args)...})
   ir = IR(m)
   ir = pass(ir)
-  argnames!(m, :mask, :f, :args)
-  ir = spliceargs!(m, ir, (:mask, mask), (Symbol("#self#"), typeof(tospmd)))
-  ir = varargs!(m, ir, length(args) + 2)
+  argnames!(m, :f, :args)
+  ir = spliceargs!(m, ir, (Symbol("#self#"), typeof(spmd)), (:mask, mask))
+  ir = varargs!(m, ir, 3)
   update!(m, ir)
   return m.code
 end
@@ -518,15 +464,23 @@ end
 
 
 # println(pass_call(pass_for_loops_gotos(pass_if(code)...)))
-# println(tospmd(vect(true,true,true,true), f, vect(5,5,5,5)))
-# println(@code_ir tospmd(vect(true, true), d, vect(3,4)))
+# println(spmd(vect(true,true,true,true), f, vect(5,5,5,5)))
+# println(@code_ir spmd(vect(true, true), d, vect(3,4)))
 # using BenchmarkTools
 #
 # input = Vector{Int16}(repeat([256], 8))
 #
-# println(tospmd(f, vect(1,6,11,-1)))
+# println(spmd(f, vect(1,6,11,-1)))
 #
-# @btime tospmd(g, Vec{Int16, 8}(256))
+# @btime spmd(g, SVec{Int16, 8}(256))
 # @btime naive_spmd(g, input)
-# println(tospmd(g, vect(3,4,5,10)))
+# println(spmd(g, vect(3,4,5,10)))
 # println(naive_spmd(g, input))
+
+using InteractiveUtils
+using InteractiveUtils: typesof
+
+macro code_spmd(ex)
+  @capture(ex, f_(xs__)) || error("@code_spmd f(xs...)")
+  :(IRTools.code_ir($(esc(f)), typesof($(xs...))) |> pass)
+end
