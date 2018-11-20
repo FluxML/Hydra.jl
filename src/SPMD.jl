@@ -15,7 +15,7 @@ module SPMD
   include("vec.jl")
 
   include("interface.jl")
-  include("lib.jl")
-  include("llvm_spmd.jl")
+  include("lib/general.jl")
+  include("lib/numeric.jl")
   include("pass.jl")
 end
