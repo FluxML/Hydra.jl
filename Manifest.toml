@@ -88,6 +88,12 @@ uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
+[[SIMD]]
+deps = ["InteractiveUtils", "Test"]
+git-tree-sha1 = "8b64b6fe9d4259cdcf56c2a421ab3a7be7f4d0cc"
+uuid = "fdea26ae-647d-5447-a871-4b548cad5224"
+version = "2.0.1"
+
 [[Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 

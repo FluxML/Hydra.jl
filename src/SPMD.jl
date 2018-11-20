@@ -1,6 +1,7 @@
 __precompile__(false)
 
 module SPMD
+  import SIMD
   using MacroTools
   using MacroTools: @forward
   using IRTools: meta, varargs!, argnames!, spliceargs!, update!, IR, @code_ir, iscontrol
