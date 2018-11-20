@@ -114,17 +114,15 @@ or_mask(masks...) = (|)(masks...)
 not_mask(mask) = ~mask
 
 function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
+  replacement(x::SSAValue) = old_to_new_ssavalue[x]
+  replacement(x) = x
   if stmt.expr isa GotoIfNot
     new_stmt = GotoIfNot(old_to_new_ssavalue[stmt.expr.cond], stmt.expr.dest)
     push!(ir, new_stmt)
   elseif stmt.expr isa GotoNode
     push!(ir, stmt)
   elseif stmt.expr isa ReturnNode
-    if stmt.expr.val == GlobalRef(Base, :nothing)
-      push!(ir, ReturnNode(GlobalRef(Base, :nothing)))
-    else
-      push!(ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
-    end
+    push!(ir, ReturnNode(replacement(stmt.expr.val)))
   elseif stmt.expr isa PhiNode
     push!(ir, stmt)
     new_ssavalue = SSAValue(length(ir.defs))
