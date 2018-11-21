@@ -26,7 +26,7 @@ function add_cond_for_block(block_to_conds::Dict{Int64, Vector{Tuple{Union{SSAVa
   end
 end
 
-function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
+function select(conds::Mask{N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
   result = zeros(T,N)
   for i in range(1, length=N)
     if !conds[i]
@@ -38,7 +38,7 @@ function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals:
   return vect(result...)
 end
 
-function select(conds::SVec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
+function select(conds::Mask{N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
   if any(conds)
     first_val
   else

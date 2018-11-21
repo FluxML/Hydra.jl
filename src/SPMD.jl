@@ -1,7 +1,6 @@
 __precompile__(false)
 
 module SPMD
-  import SIMD
   using MacroTools
   using MacroTools: @forward
   using IRTools: meta, varargs!, argnames!, spliceargs!, update!, IR, @code_ir, iscontrol
@@ -14,8 +13,8 @@ module SPMD
 
   include("vec.jl")
 
-  include("interface.jl")
   include("lib/general.jl")
   include("lib/numeric.jl")
+  include("interface.jl")
   include("pass.jl")
 end
