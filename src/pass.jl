@@ -1,7 +1,8 @@
 using Core.Compiler: PhiNode, GotoNode, GotoIfNot, ReturnNode, SSAValue, BasicBlock, Argument, PiNode
 using IRTools
 
-is_latch(block_cfg, block_id) = any(map(succ -> succ < block_id, block_cfg.succs))
+struct FutureLoopMask end
+
 is_header(block_cfg, block_id) = any(map(pred -> pred > block_id, block_cfg.preds))
 
 function get_block_for_statement(ir::IR)
@@ -26,16 +27,20 @@ function add_cond_for_block(block_to_conds::Dict{Int64, Vector{Tuple{Union{SSAVa
   end
 end
 
-function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{T,N}) where {T,S,N}
-  result = zeros(T,N)
-  for i in range(1, length=N)
-    if !conds[i]
-      result[i] = second_vals[i]
-    else
-      result[i] = first_vals[i]
-    end
-  end
-  return vect(result...)
+_select(conds::NTuple{0}, first_vals::NTuple{0}, second_vals::NTuple{0}) = ()
+function _select(conds::NTuple{N}, first_vals, second_vals) where {N}
+  cond = first(conds).value
+  v1 = first(first_vals)
+  v2 = first(second_vals)
+  other_conds = Base.tail(conds)
+  other_v1s = Base.tail(first_vals)
+  other_v2s = Base.tail(second_vals)
+  (cond ? v1 : v2, _select(other_conds, other_v1s, other_v2s)...)
+end
+
+function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{S,N}) where {T,S,N}
+  res = _select(conds.data, first_vals.data, second_vals.data)
+  vect(res...)
 end
 
 function select(conds::SVec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
@@ -43,33 +48,6 @@ function select(conds::SVec{Bool, N}, first_val::T, second_val::S) where {T <: S
     first_val
   else
     second_val
-  end
-end
-
-struct NegatedConditions
-  conds::Dict{SSAValue, SSAValue}
-  NegatedConditions(conds) = new(conds)
-  NegatedConditions() = NegatedConditions(Dict{SSAValue, SSAValue}())
-end
-
-function get_negated(nc, cond, ir)
-  if haskey(nc.conds, cond)
-    return nc.conds[cond]
-  end
-  push!(ir, xcall(SPMD, :not_mask, cond))
-  nc.conds[cond] = SSAValue(length(ir.defs))
-  return SSAValue(length(ir.defs))
-end
-
-function get_condition(value, is_true, old_to_new, nc, ir)
-  if is_true
-    if value isa SSAValue
-      old_to_new[value]
-    elseif value isa Argument
-      value
-    end
-  else
-    get_negated(nc, old_to_new[value], ir)
   end
 end
 
@@ -83,40 +61,43 @@ function fix_phinode(expr, old_to_new_ssavalue, old_to_new_block=Dict())
   return expr
 end
 
-function pass_for_loops_gotos(ir, old_to_new_block)
-  new_ir = IR(ir.lines, ir.args)
-  old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
-  for b in blocks(ir)
-    for (ssavalue, stmt) in b
-      if stmt.expr isa GotoIfNot
-        push!(new_ir, xcall(:any, stmt.expr.cond))
-        new_ssavalue = SSAValue(length(new_ir.defs))
-        new_stmt = GotoIfNot(new_ssavalue, old_to_new_block[stmt.expr.dest])
-        push!(new_ir, new_stmt)
-      elseif stmt.expr isa GotoNode
-        new_stmt = GotoNode(old_to_new_block[stmt.expr.label])
-        push!(new_ir, new_stmt)
-      elseif stmt.expr isa ReturnNode
-        push!(new_ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
-      elseif stmt.expr isa PhiNode
-        push!(new_ir, stmt)
-        new_ssavalue = SSAValue(length(new_ir.defs))
-        old_to_new_ssavalue[ssavalue] = new_ssavalue
-      else
-        new_args = map(x->if x isa SSAValue old_to_new_ssavalue[x] else x end,stmt.expr.args)
-        new_stmt = Expr(:call, new_args[1], new_args[2:length(new_args)]...)
-        push!(new_ir, new_stmt)
-        new_ssavalue = SSAValue(length(new_ir.defs))
-        old_to_new_ssavalue[ssavalue] = new_ssavalue
-      end
-    end
-    if (b.id != length(blocks(ir)))
-      block!(new_ir)
-    end
-  end
-  new_ir = map(x->fix_phinode(x, old_to_new_ssavalue), new_ir)
-  new_ir
-end
+# function pass_for_loops_gotos(ir, block_to_cond)
+#   new_ir = IR(ir.lines, ir.args)
+#   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
+#   for (b,b_cfg) in zip(blocks(ir), CFG(ir).blocks)
+#     for (ssavalue, stmt) in b
+#       if stmt.expr isa GotoIfNot
+#         cond = stmt.expr.cond
+#         if is_latch(CFG(ir).blocks[b.id+1], b.id+1)
+#           push!(new_ir, xcall(:any, block_to_cond[b.id]))
+#           cond = SSAValue(length(new_ir.defs))
+#         end
+#         new_stmt = GotoIfNot(cond, stmt.expr.dest)
+#         push!(new_ir, new_stmt)
+#       elseif stmt.expr isa GotoNode
+#         new_stmt = GotoNode(stmt.expr.label)
+#         push!(new_ir, new_stmt)
+#       elseif stmt.expr isa ReturnNode
+#         push!(new_ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
+#       elseif stmt.expr isa PhiNode
+#         push!(new_ir, stmt)
+#         new_ssavalue = SSAValue(length(new_ir.defs))
+#         old_to_new_ssavalue[ssavalue] = new_ssavalue
+#       else
+#         new_args = map(x->if x isa SSAValue old_to_new_ssavalue[x] else x end,stmt.expr.args)
+#         new_stmt = Expr(:call, new_args[1], new_args[2:length(new_args)]...)
+#         push!(new_ir, new_stmt)
+#         new_ssavalue = SSAValue(length(new_ir.defs))
+#         old_to_new_ssavalue[ssavalue] = new_ssavalue
+#       end
+#     end
+#     if (b.id != length(blocks(ir)))
+#       block!(new_ir)
+#     end
+#   end
+#   new_ir = map(x->fix_phinode(x, old_to_new_ssavalue), new_ir)
+#   new_ir
+# end
 
 function get_phinodes_values(ir, block_to_cond)
   conds = block_to_cond.vals
@@ -138,22 +119,11 @@ end
 function pass_loops_result_value(ir, block_to_cond)
   block_for_statement = get_block_for_statement(ir)
   phinodes_values = get_phinodes_values(ir, block_to_cond)
-  new_ir = new_ir = IR(ir.lines, ir.args)
+  new_ir = IR(ir.lines, ir.args)
   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
   for b in blocks(ir)
     for (ssavalue, stmt) in b
-      if stmt.expr isa GotoIfNot
-        new_stmt = GotoIfNot(old_to_new_ssavalue[stmt.expr.cond], stmt.expr.dest)
-        push!(new_ir, new_stmt)
-      elseif stmt.expr isa GotoNode
-        push!(new_ir, stmt)
-      elseif stmt.expr isa ReturnNode
-        push!(new_ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
-      elseif stmt.expr isa PhiNode
-        push!(new_ir, stmt)
-        new_ssavalue = SSAValue(length(new_ir.defs))
-        old_to_new_ssavalue[ssavalue] = new_ssavalue
-      elseif stmt.expr isa Expr
+      if stmt.expr isa Expr
         new_args = map(x->if x isa SSAValue old_to_new_ssavalue[x] else x end,stmt.expr.args)
         new_stmt = Expr(:call, new_args[1], new_args[2:length(new_args)]...)
         push!(new_ir, new_stmt)
@@ -165,6 +135,8 @@ function pass_loops_result_value(ir, block_to_cond)
           new_ssavalue = SSAValue(length(new_ir.defs))
         end
         old_to_new_ssavalue[ssavalue] = new_ssavalue
+      else
+        fix_stmt(ssavalue, stmt, new_ir, old_to_new_ssavalue)
       end
     end
     if (b.id != length(blocks(ir)))
@@ -172,49 +144,12 @@ function pass_loops_result_value(ir, block_to_cond)
     end
   end
   new_ir = map(x->fix_phinode(x, old_to_new_ssavalue), new_ir)
-  new_ir
+  new_ir, old_to_new_ssavalue
 end
 
 and_mask(masks...) = reduce((acc,val)->vectorise(&, promote(acc,val)...), masks)
 or_mask(masks...) = reduce((acc,val)->vectorise(|, promote(acc,val)...), masks)
-not_mask(mask) = vect(map(~, mask)...)
-
-function get_conditions_for_blocks(ir)
-  cfg = CFG(ir)
-  blcks = blocks(ir)
-  block_to_conds = Dict{Int64, Vector{Tuple{Union{SSAValue, Argument}, Bool}}}()
-  block_to_conds[1] = [(Argument(0), true)]
-  for (block, block_cfg, block_id) in zip(blcks, cfg.blocks, range(1, length=length(blcks)))
-    # block_to_conds[block_id] = Vector{Tuple{SSAValue, Bool}}(undef, 0)
-    preds_no_backward = filter(x -> !is_latch(cfg.blocks[x], x), block_cfg.preds)
-    # preds_no_backward = block_cfg.preds
-    if length(preds_no_backward) == 1
-      parent = blcks[preds_no_backward[1]]
-      parent_conds = block_to_conds[preds_no_backward[1]]
-      for parent_cond in parent_conds
-        add_cond_for_block(block_to_conds, block_id, parent_cond)
-      end
-      if length(parent.bb.gotos) >= 1
-        parent_cfg = cfg.blocks[preds_no_backward[1]]
-        cond = parent.bb.gotos[1].expr.cond
-        else_dest = parent.bb.gotos[1].expr.dest
-        if_dest = parent.id + 1
-        if block_id == if_dest
-          add_cond_for_block(block_to_conds, block_id, (cond, true))
-        elseif block_id == else_dest && !is_header(parent_cfg, preds_no_backward[1])
-          add_cond_for_block(block_to_conds, block_id, (cond, false))
-        end
-      end
-    elseif length(preds_no_backward) > 1
-      parents_conds = map(id -> block_to_conds[id], preds_no_backward)
-      shared_conds = intersect(parents_conds...)
-      for shared_cond in shared_conds
-        add_cond_for_block(block_to_conds, block_id, shared_cond)
-      end
-    end
-  end
-  block_to_conds
-end
+not_mask(mask) = vect(map(~, mask)...)#llvm_unary_not(mask)
 
 function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
   if stmt.expr isa GotoIfNot
@@ -223,7 +158,11 @@ function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
   elseif stmt.expr isa GotoNode
     push!(ir, stmt)
   elseif stmt.expr isa ReturnNode
-    push!(ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
+    if stmt.expr.val == GlobalRef(Base, :nothing)
+      push!(ir, ReturnNode(GlobalRef(Base, :nothing)))
+    else
+      push!(ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
+    end
   elseif stmt.expr isa PhiNode
     push!(ir, stmt)
     new_ssavalue = SSAValue(length(ir.defs))
@@ -242,87 +181,83 @@ function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
 end
 
 function pass_create_masks(ir)
-  block_to_conds = get_conditions_for_blocks(ir)
-  negated_conditions = NegatedConditions()
-  block_to_cond = Dict{Int64, Union{SSAValue, Argument}}()
+  cfg = CFG(ir)
+  forward_ir = IR(ir.lines, ir.args)
   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
-  forward_new_ir = IR(ir.lines, ir.args)
-  for b in blocks(ir)
-    if haskey(block_to_conds, b.id)
-      conds = block_to_conds[b.id]
-      current_cond = get_condition(conds[1]..., old_to_new_ssavalue, negated_conditions, forward_new_ir)
-      for i in range(2,length=length(conds)-1)
-        cond = get_condition(conds[i]..., old_to_new_ssavalue, negated_conditions, forward_new_ir)
-        push!(forward_new_ir, xcall(SPMD, :and_mask, current_cond, cond))
-        current_cond = SSAValue(length(forward_new_ir.defs))
+  block_to_block_mask = Dict{Tuple{Int64, Int64}, Union{SSAValue, Argument}}()
+  block_to_block_mask[(0,1)] = Argument(0)
+  cfg.blocks[1] = SPMD.BasicBlock(cfg.blocks[1].stmts, [0], cfg.blocks[1].succs)
+  block_to_mask = Dict{Int64, Union{SSAValue, Argument}}()
+  for (b, b_cfg) in zip(blocks(ir), cfg.blocks)
+    forward_preds = filter(k-> k == 0 || k < b.id, b_cfg.preds)
+    backward_preds = filter(k-> k != 0 && k > b.id, b_cfg.preds)
+    succs = b_cfg.succs
+    if length(backward_preds) == 0
+      incoming_masks = map(x->block_to_block_mask[(x,b.id)], forward_preds)
+      if length(incoming_masks) == 0
+        continue
       end
-      block_to_cond[b.id] = current_cond
+      cond = incoming_masks[1]
+      for other_cond in incoming_masks[2:end]
+        push!(forward_ir, xcall(SPMD, :or_mask, cond, other_cond))
+        cond = SSAValue(length(forward_ir.defs))
+      end
+      block_to_mask[b.id] = cond
+    else
+      push!(forward_ir, FutureLoopMask())
+      block_to_mask[b.id] = SSAValue(length(forward_ir.defs))
     end
-    for (ssavalue, stmt) in b
-      fix_stmt(ssavalue, stmt, forward_new_ir, old_to_new_ssavalue)
+    for (ssavalue,stmt) in b
+      if !iscontrol(stmt.expr)
+        fix_stmt(ssavalue, stmt, forward_ir, old_to_new_ssavalue)
+      end
+    end
+    if length(succs) == 1
+      block_to_block_mask[(b.id, succs[1])] = block_to_mask[b.id]
+    elseif length(succs) > 1
+      cond = old_to_new_ssavalue[b.bb.gotos[1].expr.cond]
+      else_dest = b.bb.gotos[1].expr.dest
+      if_dest = b.id + 1
+      push!(forward_ir, xcall(SPMD, :and_mask, block_to_mask[b.id], cond))
+      if_cond = SSAValue(length(forward_ir.defs))
+      block_to_block_mask[(b.id, if_dest)] = if_cond
+      push!(forward_ir, xcall(SPMD, :not_mask, cond))
+      not_cond = SSAValue(length(forward_ir.defs))
+      push!(forward_ir, xcall(SPMD, :and_mask, block_to_mask[b.id], not_cond))
+      else_cond = SSAValue(length(forward_ir.defs))
+      block_to_block_mask[(b.id, else_dest)] = else_cond
+    end
+    for goto in b.bb.gotos
+      fix_stmt(nothing, goto, forward_ir, old_to_new_ssavalue)
     end
     if (b.id != length(blocks(ir)))
-      block!(forward_new_ir)
+      block!(forward_ir)
     end
   end
-  forward_new_ir = map(x->fix_phinode(x, old_to_new_ssavalue), forward_new_ir)
-  # old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
-  # backward_new_ir = IR(ir.lines, ir.args)
-  # for (b, b_cfg) in zip(blocks(forward_new_ir), CFG(forward_new_ir).blocks)
-  #   if is_header(b_cfg, b.id)
-  #     done = false
-  #     for (ssavalue, stmt) in b
-  #       if done
-  #         fix_stmt(ssavalue, stmt, backward_new_ir, old_to_new_ssavalue)
-  #       else
-  #         is_arg = block_to_cond[b.id] isa Argument
-  #         is_ssa_and_after_mask = block_to_cond[b.id] isa SSAValue && (block_to_cond[b.id].id < ssavalue.id)
-  #         if !(stmt.expr isa PhiNode) && is_arg || is_ssa_and_after_mask
-  #           done = true
-  #           latch_block = filter(x->is_latch(CFG(forward_new_ir).blocks[x], x), b_cfg.preds)[1]
-  #           loop_mask = PhiNode(b_cfg.preds, [block_to_cond[b.id], block_to_cond[latch_block]])
-  #           push!(backward_new_ir, loop_mask)
-  #           new_ssavalue = SSAValue(length(backward_new_ir.defs))
-  #           block_to_cond[b.id] = new_ssavalue
-  #         end
-  #         fix_stmt(ssavalue, stmt, backward_new_ir, old_to_new_ssavalue)
-  #       end
-  #     end
-  #   else
-  #     for (ssavalue, stmt) in b
-  #       fix_stmt(ssavalue, stmt, backward_new_ir, old_to_new_ssavalue)
-  #     end
-  #   end
-  #   if (b.id != length(blocks(ir)))
-  #     block!(backward_new_ir)
-  #   end
-  # end
-  # new_ir = map(x->fix_phinode(x, old_to_new_ssavalue), backward_new_ir)
-  # (new_ir, block_to_cond)
-  (forward_new_ir, block_to_cond)
+  forward_ir = map(x->fix_phinode(x, old_to_new_ssavalue), forward_ir)
+  backward_ir = IR(ir.lines, ir.args)
+  for (b, b_cfg) in zip(blocks(forward_ir), cfg.blocks)
+    for (ssavalue, stmt) in b
+      if stmt.expr isa FutureLoopMask
+        preds = b_cfg.preds
+        conds = map(k->block_to_block_mask[(k,b.id)], preds)
+        loop_mask = PhiNode(preds, conds)
+        push!(backward_ir, loop_mask)
+      else
+        push!(backward_ir, stmt.expr)
+      end
+    end
+    if (b.id != length(blocks(ir)))
+      block!(backward_ir)
+    end
+  end
+  backward_ir, block_to_mask, block_to_block_mask
 end
 
-# function pass_create_masks(ir)
-#   cfg = CFG(ir)
-#   new_ir = IR(ir.lines, ir.args)
-#   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
-#   block_to_block_cond = Dict{Tuple{Int64, Int64}, SSAValue}
-#   for (b, b_cfg) in zip(blocks(ir), cfg.blocks)
-#     preds = b_cfg.preds
-#     if length(preds) > 1
-#     succs = b_cfg.succs
-
-function pass_if(ir, block_to_cond)
+function pass_from_phi_to_select(ir, block_to_block_mask)
   new_ir = IR(ir.lines, ir.args)
   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
-  old_to_new_block = Dict{Int64, Int64}()
-  blks = blocks(ir)
-  cfg = CFG(ir)
-  for (b, b_cfg) in zip(blks, cfg.blocks)
-    if is_header(b_cfg, b.id)
-      block!(new_ir)
-    end
-    old_to_new_block[b.id] = length(blocks(new_ir))
+  for (b, b_cfg) in zip(blocks(ir), CFG(ir).blocks)
     for (ssavalue, stmt) in b
       if stmt.expr isa PhiNode
         if is_header(b_cfg, b.id)
@@ -331,49 +266,89 @@ function pass_if(ir, block_to_cond)
           old_to_new_ssavalue[ssavalue] = new_ssavalue
           continue
         end
-        edges = reverse(stmt.expr.edges)[2:length(stmt.expr.edges)]
-        conds = map(x -> old_to_new_ssavalue[block_to_cond[x]], edges)
-        values = reverse(map(x -> old_to_new_ssavalue[x], stmt.expr.values))
-        second_cond = conds[1]
+        conds = map(x -> old_to_new_ssavalue[block_to_block_mask[(x,b.id)]], stmt.expr.edges)
+        values = map(x -> old_to_new_ssavalue[x], stmt.expr.values)
+        second_cond = conds[2]
         first_val, second_val = values[1], values[2]
         push!(new_ir, xcall(SPMD, :select, second_cond, second_val, first_val))
         new_ssavalue = SSAValue(length(new_ir.defs))
-        for (condition, value) in zip(conds[2:length(conds)], values[3:length(values)])
+        for (condition, value) in zip(conds[3:end], values[3:end])
           push!(new_ir, xcall(SPMD, :select, condition, value, new_ssavalue))
           new_ssavalue = SSAValue(length(new_ir.defs))
         end
         old_to_new_ssavalue[ssavalue] = new_ssavalue
-      elseif stmt.expr isa ReturnNode
-        push!(new_ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
-      elseif isgoto(stmt.expr)
-        if is_latch(b_cfg, b.id) | is_header(b_cfg, b.id)
-          if stmt.expr isa GotoIfNot
-            new_stmt = GotoIfNot(old_to_new_ssavalue[stmt.expr.cond], stmt.expr.dest)
-            push!(new_ir, new_stmt)
-            block!(new_ir)
-          else
-            push!(new_ir, stmt)
-            block!(new_ir)
-          end
-        end
-      elseif stmt.expr isa Expr
-        new_args = map(x->if x isa SSAValue old_to_new_ssavalue[x] else x end,stmt.expr.args)
-        new_stmt = Expr(:call, new_args[1], new_args[2:length(new_args)]...)
-        push!(new_ir, new_stmt)
-        new_ssavalue = SSAValue(length(new_ir.defs))
-        old_to_new_ssavalue[ssavalue] = new_ssavalue
-      elseif stmt.expr isa PiNode
-        if stmt.expr.val isa SSAValue
-          old_to_new_ssavalue[ssavalue] = old_to_new_ssavalue[stmt.expr.val]
-        else
-          #TODO
-        end
+      else
+        fix_stmt(ssavalue, stmt, new_ir, old_to_new_ssavalue)
       end
     end
+    if (b.id != length(blocks(ir)))
+      block!(new_ir)
+    end
   end
-  new_ir = map(x->fix_phinode(x, old_to_new_ssavalue, old_to_new_block), new_ir)
-  (new_ir, old_to_new_block, block_to_cond)
+  map(x->fix_phinode(x, old_to_new_ssavalue), new_ir)
 end
+
+# function pass_if(ir, block_to_cond, block_to_block_mask)
+#   new_ir = IR(ir.lines, ir.args)
+#   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
+#   old_to_new_block = Dict{Int64, Int64}()
+#   blks = blocks(ir)
+#   cfg = CFG(ir)
+#   for (b, b_cfg) in zip(blks, cfg.blocks)
+#     if is_header(b_cfg, b.id)
+#       block!(new_ir)
+#     end
+#     old_to_new_block[b.id] = length(blocks(new_ir))
+#     for (ssavalue, stmt) in b
+#       if stmt.expr isa PhiNode
+#         if is_header(b_cfg, b.id)
+#           push!(new_ir, stmt)
+#           new_ssavalue = SSAValue(length(new_ir.defs))
+#           old_to_new_ssavalue[ssavalue] = new_ssavalue
+#           continue
+#         end
+#         conds = map(x -> old_to_new_ssavalue[block_to_block_mask[(x,b.id)]], stmt.expr.edges)
+#         values = map(x -> old_to_new_ssavalue[x], stmt.expr.values)
+#         second_cond = conds[2]
+#         first_val, second_val = values[1], values[2]
+#         push!(new_ir, xcall(SPMD, :select, second_cond, second_val, first_val))
+#         new_ssavalue = SSAValue(length(new_ir.defs))
+#         for (condition, value) in zip(conds[3:length(conds)], values[3:length(values)])
+#           push!(new_ir, xcall(SPMD, :select, condition, value, new_ssavalue))
+#           new_ssavalue = SSAValue(length(new_ir.defs))
+#         end
+#         old_to_new_ssavalue[ssavalue] = new_ssavalue
+#       elseif stmt.expr isa ReturnNode
+#         push!(new_ir, ReturnNode(old_to_new_ssavalue[stmt.expr.val]))
+#       elseif isgoto(stmt.expr)
+#         if is_latch(b_cfg, b.id) | is_header(b_cfg, b.id)
+#           if stmt.expr isa GotoIfNot
+#             new_stmt = GotoIfNot(old_to_new_ssavalue[stmt.expr.cond], stmt.expr.dest)
+#             push!(new_ir, new_stmt)
+#             block!(new_ir)
+#           else
+#             push!(new_ir, stmt)
+#             block!(new_ir)
+#           end
+#         end
+#       elseif stmt.expr isa Expr
+#         new_args = map(x->if x isa SSAValue old_to_new_ssavalue[x] else x end,stmt.expr.args)
+#         new_stmt = Expr(:call, new_args[1], new_args[2:length(new_args)]...)
+#         push!(new_ir, new_stmt)
+#         new_ssavalue = SSAValue(length(new_ir.defs))
+#         old_to_new_ssavalue[ssavalue] = new_ssavalue
+#       elseif stmt.expr isa PiNode
+#         if stmt.expr.val isa SSAValue
+#           old_to_new_ssavalue[ssavalue] = old_to_new_ssavalue[stmt.expr.val]
+#         else
+#           #TODO
+#         end
+#       end
+#     end
+#   end
+#   new_ir = map(x->fix_phinode(x, old_to_new_ssavalue, old_to_new_block), new_ir)
+#   new_ir
+# end
 
 function pass_call(ir::IR, block_to_cond)
   new_ir = IR(ir.lines, ir.args)
@@ -404,15 +379,47 @@ function pass_call(ir::IR, block_to_cond)
   new_ir
 end
 
+function pass_delete_gotos(ir, block_to_block_mask)
+  new_ir = IR(ir.lines, ir.args)
+  old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
+  cfg = CFG(ir).blocks
+  for b in blocks(ir)
+    for (ssavalue, stmt) in b
+      if stmt.expr isa GotoIfNot
+        continue
+      elseif stmt.expr isa GotoNode
+        if stmt.expr.label < b.id
+          mask = block_to_block_mask[(b.id, stmt.expr.label)]
+          push!(new_ir, xcall(SPMD, :not_mask, mask))
+          not_mask = SSAValue(length(new_ir.defs))
+          push!(new_ir, xcall(:all, not_mask))
+          new_ssavalue = SSAValue(length(new_ir.defs))
+          new_stmt = GotoIfNot(new_ssavalue, stmt.expr.label)
+          push!(new_ir, new_stmt)
+          block!(new_ir)
+        end
+      else
+        fix_stmt(ssavalue, stmt, new_ir, old_to_new_ssavalue)
+      end
+    end
+    if (b.id+1 <= length(cfg) && is_header(cfg[b.id+1], b.id+1))
+      block!(new_ir)
+    end
+  end
+  map(x->fix_phinode(x, old_to_new_ssavalue), new_ir)
+end
+
 unwraptype(::Type{SVec{T,N}}) where {T,N} = T
 unwraptype(x) = x
 
 function pass(ir)
-  ir, block_to_cond = pass_create_masks(ir)
+  ir, block_to_cond, block_to_block_mask = pass_create_masks(ir)
   ir = pass_call(ir, block_to_cond)
-  ir, old_to_new_block = pass_if(ir, block_to_cond)
-  ir = pass_loops_result_value(ir, block_to_cond)
-  ir = pass_for_loops_gotos(ir, old_to_new_block)
+  ir = pass_from_phi_to_select(ir, block_to_block_mask)
+  # ir = pass_for_loops_gotos(ir, block_to_cond)
+  ir, old_to_new_ssavalue = pass_loops_result_value(ir, block_to_cond)
+  block_to_block_mask = Dict(k=>v isa SSAValue ? old_to_new_ssavalue[v] : v for (k,v) in block_to_block_mask)
+  ir = pass_delete_gotos(ir, block_to_block_mask)
   ir
 end
 
@@ -426,56 +433,6 @@ end
   update!(m, ir)
   return m.code
 end
-
-using IRTools: @code_ir
-
-function f(x)
-  a = x + 1
-  i = 0
-  while x > i
-    if x >= 10
-      a += 3
-    elseif x >= 5
-      a += 2
-    else
-      a += 1
-    end
-    i += 1
-  end
-  a
-end
-
-function d(x)
-  a = x + 1
-  for i in 1:x
-    a += x
-  end
-  a
-end
-
-# function naive_spmd(f, args)
-#   map(f, args)
-# end
-# code = @code_ir f(6)
-# println(code)
-# pass(code) |> println
-# println(pass_if(code)...)
-# println(pass_for_loops_gotos(pass_if(code)...))
-
-
-# println(pass_call(pass_for_loops_gotos(pass_if(code)...)))
-# println(spmd(vect(true,true,true,true), f, vect(5,5,5,5)))
-# println(@code_ir spmd(vect(true, true), d, vect(3,4)))
-# using BenchmarkTools
-#
-# input = Vector{Int16}(repeat([256], 8))
-#
-# println(spmd(f, vect(1,6,11,-1)))
-#
-# @btime spmd(g, SVec{Int16, 8}(256))
-# @btime naive_spmd(g, input)
-# println(spmd(g, vect(3,4,5,10)))
-# println(naive_spmd(g, input))
 
 using InteractiveUtils
 using InteractiveUtils: typesof

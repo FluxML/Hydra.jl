@@ -49,23 +49,12 @@ SVec(xs::NTuple{N,T}) where {T,N} = SVec{T,N}(map(VecElement, xs))
 SVec{T,N}(x::T) where {T,N} = SVec(ntuple(_ -> VecElement(x), N))
 SVec{T,N}(x) where {T,N} = SVec{T,N}(convert(T, x))
 
+vect(xs::Nothing...) = Vec(xs)
 vect(xs::T...) where {T} = SVec(xs)
-# vect(xs::T...) where {T} = Vec(xs)
 
 data(xs::SVec) = getfield.(xs.data, :value)
 
 Base.summary(::SVec) = "SVec"
-
-struct HoleyVec{T,N} <: AbstractVec{T,N}
-  data::NTuple{N,Union{Nothing,VecElement{T}}}
-  HoleyVec{T,N}(data::NTuple{N,Union{Nothing, VecElement{T}}}) where {T,N} = new(data)
-end
-
-HoleyVec(xs::NTuple{N,Union{Nothing,VecElement{T}}}) where {T,N} = HoleyVec{T,N}(xs)
-
-vect(xs::Union{Nothing, T}...) where {T} = HoleyVec(map(x -> if x isa Nothing x else VecElement(x) end, xs))
-
-data(xs::HoleyVec) = map(x -> if x isa Nothing x else x.value end, xs.data)
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
@@ -92,18 +81,15 @@ import Base.convert, Base.promote_rule
 convert(::Type{SVec{T,N}}, x) where {T,N} = SVec{T,N}(x)
 convert(::Type{SVec{T,N}}, xs::SVec{S,N}) where {T,S,N} = vect(T.(data(xs))...)
 
-convert(::Type{HoleyVec{T,N}}, xs::SVec{S,N}) where {T,S,N} = HoleyVec(map(x -> VecElement(T(x.value)), xs.data))
-convert(::Type{HoleyVec{T,N}}, xs::HoleyVec{S,N}) where {T,S,N} = HoleyVec(map(x->if x isa Nothing x else VecElement(T(x.value)) end, xs.data))
+convert(::Type{Vec{T,N}}, xs::SVec{S,N}) where {T,S,N} = Vec(map(x -> VecElement(T(x.value)), xs.data))
+convert(::Type{Vec{T,N}}, xs::Vec{S,N}) where {T,S,N} = Vec(convert.(T, xs.data))
 
 promote_rule(::Type{SVec{S,N}}, ::Type{T}) where {S,T<:ScalarTypes,N} = SVec{promote_type(T,S),N}
 promote_rule(::Type{SVec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = SVec{promote_type(T,S),N}
-promote_rule(::Type{HoleyVec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = HoleyVec{promote_type(T,S),N}
-promote_rule(::Type{HoleyVec{S,N}}, ::Type{HoleyVec{T,N}}) where {S,T,N} = HoleyVec{promote_type(T,S),N}
+promote_rule(::Type{Vec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = Vec{promote_type(T,S),N}
+promote_rule(::Type{Vec{S,N}}, ::Type{Vec{T,N}}) where {S,T,N} = Vec{promote_type(T,S),N}
 
 import Base.(:)
-# function (:)(start::SVec{T,N}, step::SVec{T,N}, stop::SVec{T,N}) where {T <: ScalarTypes,N}
-#     vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop)))
-# end
 (:)(start::SVec{T,N}, step::SVec{T,N}, stop::SVec{T,N}) where {T,N} = vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop))...)
 (:)(start::SVec{T,N}, stop::SVec{T,N}) where {T,N} = (:)(start, SVec{T,N}(1), stop)
 

@@ -34,6 +34,19 @@ function while_loop(x)
   a
 end
 
+function for_loop(x)
+  a = x + 1
+  for i=1:a
+    if x > 10
+      a += x
+    else
+      a -= x
+    end
+  end
+  a
+end
+
+
 mask = SPMD.vect(true,true,true,true)
 
 input = Vector{Int32}([1,6,11,-1])
@@ -44,3 +57,6 @@ input = Vector{Int32}([5,5,5,5])
 
 input = Vector{Int32}([1,5,12,-3])
 @test SPMD.spmd(mask, while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)
+
+input = Vector{Int32}([2,32,-1,21])
+@test SPMD.spmd(mask, for_loop, SPMD.vect(input...)) == SPMD.vect(map(for_loop, input)...)

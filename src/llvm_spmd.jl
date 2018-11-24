@@ -183,10 +183,11 @@ for op in (:(==),:(!=), :(>), :(>=), :(<), :(<=))
         spmd(mask::SVec{Bool, N}, ::typeof($op), xs::SVec{T, N}, x::S) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,x)...)
         spmd(mask::SVec{Bool, N}, ::typeof($op), xs::SVec{T, N}, ys::SVec{T, N}) where {T <: ScalarTypes, N} = vectorisePredicate($op, promote(xs,ys)...)
         spmd(mask::SVec{Bool, N}, ::typeof($op), x::S, xs::SVec{T, N}) where {S <: ScalarTypes, T <: ScalarTypes, N} = vectorisePredicate($op, promote(x,xs)...)
+        spmd(mask::SVec{Bool}, ::typeof($op), x::ScalarTypes, y::ScalarTypes) = $op(x, y)
     end
 end
 
 # spmd(::typeof(~), xs::SVec{T, N}) where {T <: ScalarTypes, N} = llvm_unary_not(xs)
 # spmd(::typeof(~), xs::SVec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
-spmd(mask::SVec{Bool, N}, ::typeof(~), xs::SVec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
-spmd(mask::SVec{Bool, N}, ::typeof(Base.not_int), xs::SVec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)
+spmd(mask::SVec{Bool, N}, ::typeof(~), xs::SVec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)#llvm_unary_not(xs)
+spmd(mask::SVec{Bool, N}, ::typeof(Base.not_int), xs::SVec{T, N}) where {T <: ScalarTypes, N} = vect(map(~, xs)...)#llvm_unary_not(xs)
