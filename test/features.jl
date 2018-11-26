@@ -36,7 +36,7 @@ end
 
 function for_loop(x)
   a = x + 1
-  for i=1:a
+  for i=1:x
     if x > 10
       a += x
     else
