@@ -1,6 +1,8 @@
 import SIMD
 using SIMD: ScalarTypes
 
+datatype(x::SIMD.Vec{N,T}) where {N,T} = T
+
 # Scalar vector type
 # Essentially equivalent to what SIMD.jl provides; we only reproduce it
 # so that it fits into our `AbstractVec` framework.
@@ -30,6 +32,11 @@ simd_vec(x) = x
 
 SVecOrVal{T} = Union{SVec{T},T}
 
+vecconvert(T, x::SIMD.Vec) = convert(SIMD.Vec{length(x),T}, x)
+vecconvert(T, x) = convert(T, x)
+
+vecpromote(xs...) = map(x -> vecconvert(promote_type(map(datatype, xs)...), x), xs)
+
 # Arithmetic operations (forward to SIMD.jl)
 
 for op in :[+, -, *, /, div, rem, &, |, !,
@@ -39,6 +46,6 @@ for op in :[+, -, *, /, div, rem, &, |, !,
           $op(map(simd_vec, xs)...)
         # TODO: remove this when we can compile the usual promotion mechanisms
         spmd(mask::Mask, ::typeof($op), xs::SVecOrVal{<:ScalarTypes}...) =
-          $op(map(simd_vec, xs)...)
+          $op(promote_vec(map(simd_vec, xs)...)...)
     end
 end

@@ -2,6 +2,9 @@
 data(x) = x
 abstract type AbstractVec{T,N} end
 
+datatype(x) = typeof(x)
+datatype(::AbstractVec{T}) where T = T
+
 data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
 
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
