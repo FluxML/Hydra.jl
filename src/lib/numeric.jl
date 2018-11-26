@@ -28,12 +28,17 @@ Base.convert(::Type{SIMD.Vec}, x::SVec{T,N}) where {T,N} =
 simd_vec(x::SVec) = convert(SIMD.Vec, x)
 simd_vec(x) = x
 
+SVecOrVal{T} = Union{SVec{T},T}
+
 # Arithmetic operations (forward to SIMD.jl)
 
 for op in :[+, -, *, /, div, rem, &, |, !,
             ==, !=, >, >=, <, <=].args
     @eval begin
-        spmd(mask::Mask{N}, ::typeof($op), xs::Union{SVec{T,N},T}...) where {T <: ScalarTypes, N} =
+        spmd(mask::Mask, ::typeof($op), xs::SVecOrVal{T}...) where T <: ScalarTypes =
+          $op(map(simd_vec, xs)...)
+        # TODO: remove this when we can compile the usual promotion mechanisms
+        spmd(mask::Mask, ::typeof($op), xs::SVecOrVal{<:ScalarTypes}...) =
           $op(map(simd_vec, xs)...)
     end
 end
