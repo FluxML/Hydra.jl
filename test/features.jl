@@ -1,10 +1,12 @@
 using SPMD, Test
 
-@test lane() == 1
+@test lane() == lanewidth() == 1
 
 @test @spmd(4, lane()) == 1
 
-@test @spmd(4, lanesum(lane())) == 10
+@test @spmd(4, lanewidth()) == 4
+
+@test @spmd(4, lanesum(5)) == 20
 
 function if_statement(x)
   a = x + 1
