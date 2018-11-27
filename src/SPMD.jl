@@ -9,7 +9,7 @@ module SPMD
   using IRTools.Wrap: CFG
   import Core.Compiler: userefs
 
-  export @spmd, lanewidth, lane
+  export @spmd, lanewidth, lane, lanesum
 
   include("vec.jl")
 

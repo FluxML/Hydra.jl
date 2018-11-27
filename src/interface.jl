@@ -15,3 +15,7 @@ lane() = 1
 
 spmd(mask, ::typeof(lanewidth)) = length(mask)
 spmd(mask, ::typeof(lane)) = vect(ntuple(identity, length(mask))...)
+
+lanesum(x) = x
+spmd(mask, ::typeof(lanesum), x) = x
+spmd(mask, ::typeof(lanesum), x::AbstractVec) = sum(x)

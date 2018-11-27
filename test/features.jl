@@ -1,5 +1,11 @@
 using SPMD, Test
 
+@test lane() == 1
+
+@test @spmd(4, lane()) == 1
+
+@test @spmd(4, lanesum(lane())) == 10
+
 function if_statement(x)
   a = x + 1
   if a > 10
