@@ -34,17 +34,6 @@ vect(xs...) = Vec(xs)
 
 Base.summary(::Vec{T}) where T = "Vec{$T}"
 
-struct HoleyVec{T,N} <: AbstractVec{T,N}
-  data::NTuple{N,Union{Nothing,VecElement{T}}}
-  HoleyVec{T,N}(data::NTuple{N,Union{Nothing, VecElement{T}}}) where {T,N} = new(data)
-end
-
-HoleyVec(xs::NTuple{N,Union{Nothing,VecElement{T}}}) where {T,N} = HoleyVec{T,N}(xs)
-
-vect(xs::Union{Nothing, T}...) where {T} = HoleyVec(map(x -> if x isa Nothing x else VecElement(x) end, xs))
-
-data(xs::HoleyVec) = map(x -> if x isa Nothing x else x.value end, xs.data)
-
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
 end
@@ -66,18 +55,11 @@ end
 # TODO use smaller words where possible
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
-import Base.(:)
-# function (:)(start::SVec{T,N}, step::SVec{T,N}, stop::SVec{T,N}) where {T <: ScalarTypes,N}
-#     vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop)))
-# end
-(:)(start::AbstractVec{T,N}, step::AbstractVec{T,N}, stop::AbstractVec{T,N}) where {T,N} = vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop))...)
-(:)(start::AbstractVec{T,N}, stop::AbstractVec{T,N}) where {T,N} = (:)(start, AbstractVec{T,N}(1), stop)
+import Base.convert, Base.promote_rule
 
-(:)(start::T, stop::AbstractVec{S,N}) where {T,S,N} = (:)(promote(start, stop)...)
-(:)(start::AbstractVec{T,N}, stop::S) where {T,S,N} = (:)(promote(start, stop)...)
+convert(::Type{Vec{T,N}}, xs::Vec{S,N}) where {T,S,N} = Vec(convert.(T, xs.data))
 
-spmd(mask, ::typeof(:), start, step, stop) = start:step:stop
-spmd(mask, ::typeof(:), start, stop) = start:stop
+promote_rule(::Type{Vec{S,N}}, ::Type{Vec{T,N}}) where {S,T,N} = Vec{promote_type(T,S),N}
 
 #HACK
 spmd(mask, ::typeof(===), x, y) = vect((x .=== y)...)

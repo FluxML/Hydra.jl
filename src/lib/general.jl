@@ -32,7 +32,7 @@ function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}, state::AbstractVe
   end |> splat_and_vect
 end
 
-function masked_getfield(mask, xs::HoleyVec{T,N}, names) where {T,N}
+function masked_getfield(mask, xs::Vec{T,N}, names) where {T,N}
   splat_and_vect(xs) = vect(xs...)
   map(zip(mask, xs, names)) do (m, x, name)
     if m
@@ -48,5 +48,5 @@ function spmd(mask, ::typeof(getfield), x::AbstractVec{T,N}, name::S) where {S,T
 end
 spmd(mask, ::typeof(getfield), x::AbstractVec{T,N}, name::AbstractVec{S,N}) where {S,T,N} = vect(getfield.(x, name)...)
 
-spmd(mask, ::typeof(getfield), x::HoleyVec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, AbstractVec{S,N}(name))
-spmd(mask, ::typeof(getfield), x::HoleyVec{T,N}, name::HoleyVec{S,N}) where {S,T,N} = masked_getfield(mask, x, name)
+spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, Vec{S,N}(name))
+spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::Vec{S,N}) where {S,T,N} = masked_getfield(mask, x, name)
