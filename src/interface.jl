@@ -1,10 +1,12 @@
 mask(n) = vect(ntuple(_ -> true, n)...)
 
+lane1(xs::AbstractVec) = xs[1]
+lane1(x) = x
+
 macro spmd(n, ex)
   :(let
       mask = vect(ntuple(_ -> true, $(esc(n)))...)
-      spmd(mask, () -> $(esc(ex)))
-      nothing
+      lane1(spmd(mask, () -> $(esc(ex))))
   end)
 end
 
