@@ -1,4 +1,5 @@
 using SPMD, Test
+using SPMD: shuffle
 
 @test lane() == lanewidth() == 1
 
@@ -7,6 +8,10 @@ using SPMD, Test
 @test @spmd(4, lanewidth()) == 4
 
 @test @spmd(4, lanesum(5)) == 20
+
+@test @spmd(4, shuffle(lane(), 4+1-lane())) == 4
+
+@test @spmd(4, shuffle(2lane(), 3)) == 6
 
 function if_statement(x)
   a = x + 1
