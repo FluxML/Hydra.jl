@@ -38,12 +38,12 @@ function _select(conds::NTuple{N}, first_vals, second_vals) where {N}
   (cond ? v1 : v2, _select(other_conds, other_v1s, other_v2s)...)
 end
 
-function select(conds::SVec{Bool, N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{S,N}) where {T,S,N}
+function select(conds::Mask{N}, first_vals::AbstractVec{T,N}, second_vals::AbstractVec{S,N}) where {T,S,N}
   res = _select(conds.data, first_vals.data, second_vals.data)
   vect(res...)
 end
 
-function select(conds::SVec{Bool, N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
+function select(conds::Mask{N}, first_val::T, second_val::S) where {T <: ScalarTypes, S <: ScalarTypes, N}
   if any(conds)
     first_val
   else
@@ -109,9 +109,9 @@ function pass_loops_result_value(ir, block_to_cond)
   new_ir, old_to_new_ssavalue
 end
 
-and_mask(masks...) = reduce((acc,val)->vectorise(&, promote(acc,val)...), masks)
-or_mask(masks...) = reduce((acc,val)->vectorise(|, promote(acc,val)...), masks)
-not_mask(mask) = vect(map(~, mask)...)#llvm_unary_not(mask)
+and_mask(masks...) = (&)(masks...)
+or_mask(masks...) = (|)(masks...)
+not_mask(mask) = ~mask
 
 function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
   if stmt.expr isa GotoIfNot
@@ -324,6 +324,7 @@ end
 
 @generated function spmd(mask, f, args...)
   m = meta(Tuple{f,unwraptype.(args)...})
+  m == nothing && return :(error("Can't SPMD $f"))
   ir = IR(m)
   ir = pass(ir)
   argnames!(m, :f, :args)

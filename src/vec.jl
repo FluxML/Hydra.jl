@@ -1,22 +1,19 @@
 # Unwrap vecs into tuples
-const BoolTypes = Union{Bool}
-const IntTypes = Union{Int8, Int16, Int32, Int64, Int128}
-const UIntTypes = Union{UInt8, UInt16, UInt32, UInt64, UInt128}
-const IntegerTypes = Union{BoolTypes, IntTypes, UIntTypes}
-const FloatingTypes = Union{Float16, Float32, Float64}
-const ScalarTypes = Union{IntegerTypes, FloatingTypes}
-
 data(x) = x
 abstract type AbstractVec{T,N} end
 
+datatype(x) = typeof(x)
+datatype(::AbstractVec{T}) where T = T
+
 data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
+
+(V::Type{<:AbstractVec{T,N}})(x::T) where {T, N} = V(ntuple(_ -> x, N))
 
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
 Base.getindex(xs::AbstractVec, i::Integer) = data(xs)[i]
 
 function Base.show(io::IO, v::AbstractVec)
   print(io, summary(v), "{")
-  tostring(x) = if x isa Nothing "nothing" else x end
   join(io, sprint.(show, v), ", ")
   print(io, "}")
 end
@@ -24,6 +21,7 @@ end
 Base.iterate(v::AbstractVec, i = 1) =
   i > length(v) ? nothing : (v[i], i+1)
 
+const Mask{N} = AbstractVec{Bool,N}
 
 struct Vec{T,N} <: AbstractVec{T,N}
   data::NTuple{N,T}
@@ -37,24 +35,6 @@ Vec(xs::Tuple) = Vec{Union{map(typeof,xs)...},length(xs)}(xs)
 vect(xs...) = Vec(xs)
 
 Base.summary(::Vec{T}) where T = "Vec{$T}"
-
-struct SVec{T,N} <: AbstractVec{T,N}
-  data::NTuple{N,VecElement{T}}
-  SVec{T,N}(data::NTuple{N,VecElement{T}}) where {T,N} = new(data)
-end
-
-SVec(xs::NTuple{N,VecElement{T}}) where {T,N} = SVec{T,N}(xs)
-SVec(xs::NTuple{N,T}) where {T,N} = SVec{T,N}(map(VecElement, xs))
-
-SVec{T,N}(x::T) where {T,N} = SVec(ntuple(_ -> VecElement(x), N))
-SVec{T,N}(x) where {T,N} = SVec{T,N}(convert(T, x))
-
-vect(xs::Nothing...) = Vec(xs)
-vect(xs::T...) where {T} = SVec(xs)
-
-data(xs::SVec) = getfield.(xs.data, :value)
-
-Base.summary(::SVec) = "SVec"
 
 struct BitVec{N,T<:Unsigned} <: AbstractVec{Bool,N}
   data::T
@@ -74,30 +54,22 @@ Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
   return y
 end
 
+# Define some mask operations directly
+
+import Base: &, |, ~
+
+(a::Mask{N} & b::Mask{N}) where N = spmd(mask(N), &, a, b)
+(a::Mask{N} | b::Mask{N}) where N = spmd(mask(N), |, a, b)
+(~a::Mask{N}) where N = spmd(mask(N), ~, a)
+
 # TODO use smaller words where possible
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 
 import Base.convert, Base.promote_rule
-convert(::Type{SVec{T,N}}, x) where {T,N} = SVec{T,N}(x)
-convert(::Type{SVec{T,N}}, xs::SVec{S,N}) where {T,S,N} = vect(T.(data(xs))...)
 
-convert(::Type{Vec{T,N}}, xs::SVec{S,N}) where {T,S,N} = Vec(map(x -> VecElement(T(x.value)), xs.data))
 convert(::Type{Vec{T,N}}, xs::Vec{S,N}) where {T,S,N} = Vec(convert.(T, xs.data))
 
-promote_rule(::Type{SVec{S,N}}, ::Type{T}) where {S,T<:ScalarTypes,N} = SVec{promote_type(T,S),N}
-promote_rule(::Type{SVec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = SVec{promote_type(T,S),N}
-promote_rule(::Type{Vec{S,N}}, ::Type{SVec{T,N}}) where {S,T,N} = Vec{promote_type(T,S),N}
 promote_rule(::Type{Vec{S,N}}, ::Type{Vec{T,N}}) where {S,T,N} = Vec{promote_type(T,S),N}
-
-import Base.(:)
-(:)(start::SVec{T,N}, step::SVec{T,N}, stop::SVec{T,N}) where {T,N} = vect(map(x -> x[1]:x[2]:x[3], zip(start,step,stop))...)
-(:)(start::SVec{T,N}, stop::SVec{T,N}) where {T,N} = (:)(start, SVec{T,N}(1), stop)
-
-(:)(start::T, stop::SVec{S,N}) where {T,S,N} = (:)(promote(start, stop)...)
-(:)(start::SVec{T,N}, stop::S) where {T,S,N} = (:)(promote(start, stop)...)
-
-spmd(mask, ::typeof(:), start, step, stop) = start:step:stop
-spmd(mask, ::typeof(:), start, stop) = start:stop
 
 #HACK
 spmd(mask, ::typeof(===), x, y) = vect((x .=== y)...)

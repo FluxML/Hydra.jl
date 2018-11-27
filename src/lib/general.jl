@@ -43,10 +43,10 @@ function masked_getfield(mask, xs::Vec{T,N}, names) where {T,N}
   end |> splat_and_vect
 end
 
-function spmd(mask, ::typeof(getfield), x::SVec{T,N}, name::S) where {S,T,N}
+function spmd(mask, ::typeof(getfield), x::AbstractVec{T,N}, name::S) where {S,T,N}
   vect(getfield.(x,name)...)
 end
-spmd(mask, ::typeof(getfield), x::SVec{T,N}, name::SVec{S,N}) where {S,T,N} = vect(getfield.(x, name)...)
+spmd(mask, ::typeof(getfield), x::AbstractVec{T,N}, name::AbstractVec{S,N}) where {S,T,N} = vect(getfield.(x, name)...)
 
-spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, SVec{S,N}(name))
+spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, Vec{S,N}(name))
 spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::Vec{S,N}) where {S,T,N} = masked_getfield(mask, x, name)
