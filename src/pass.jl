@@ -109,9 +109,9 @@ function pass_loops_result_value(ir, block_to_cond)
   new_ir, old_to_new_ssavalue
 end
 
-and_mask(masks...) = reduce((acc,val)->vectorise(&, promote(acc,val)...), masks)
-or_mask(masks...) = reduce((acc,val)->vectorise(|, promote(acc,val)...), masks)
-not_mask(mask) = vect(map(~, mask)...)#llvm_unary_not(mask)
+and_mask(masks...) = (&)(masks...)
+or_mask(masks...) = (|)(masks...)
+not_mask(mask) = ~mask
 
 function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
   if stmt.expr isa GotoIfNot

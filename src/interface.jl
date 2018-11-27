@@ -1,3 +1,5 @@
+mask(n) = vect(ntuple(_ -> true, n)...)
+
 macro spmd(n, ex)
   :(let
       mask = vect(ntuple(_ -> true, $(esc(n)))...)

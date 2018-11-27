@@ -7,6 +7,8 @@ datatype(::AbstractVec{T}) where T = T
 
 data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
 
+(V::Type{<:AbstractVec{T,N}})(x::T) where {T, N} = V(ntuple(_ -> x, N))
+
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
 Base.getindex(xs::AbstractVec, i::Integer) = data(xs)[i]
 
@@ -51,6 +53,14 @@ Base.getindex(v::BitVec, i) = Bool(v.data >> (i-1) & 0x01)
   end
   return y
 end
+
+# Define some mask operations directly
+
+import Base: &, |, ~
+
+(a::Mask{N} & b::Mask{N}) where N = spmd(mask(N), &, a, b)
+(a::Mask{N} | b::Mask{N}) where N = spmd(mask(N), |, a, b)
+(~a::Mask{N}) where N = spmd(mask(N), ~, a)
 
 # TODO use smaller words where possible
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
