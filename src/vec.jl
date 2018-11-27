@@ -62,6 +62,8 @@ import Base: &, |, ~
 (a::Mask{N} | b::Mask{N}) where N = spmd(mask(N), |, a, b)
 (~a::Mask{N}) where N = spmd(mask(N), ~, a)
 
+Base.sum(x::AbstractVec) = sum(data(x))
+
 # TODO use smaller words where possible
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))
 

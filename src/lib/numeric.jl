@@ -37,6 +37,8 @@ simd_vec(x) = x
 svec(x::SIMD.Vec) = convert(SVec, x)
 svec(x) = x
 
+Base.sum(x::SVec) = sum(convert(SIMD.Vec, x))
+
 SVecOrVal{T} = Union{SVec{T},T}
 
 vecconvert(T, x::SIMD.Vec) = convert(SIMD.Vec{length(x),T}, x)
