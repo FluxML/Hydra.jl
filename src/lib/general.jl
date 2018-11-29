@@ -6,13 +6,13 @@ function spmdmap(mask, f, args...)
   vect(map((m, a...) -> m ? f(a...) : nothing, mask, vargs...)...)
 end
 
-spmd(mask, ::typeof(println), xs...) = spmdmap(mask, println, xs...)
-spmd(mask, ::typeof(print), xs...) = spmdmap(mask, print, xs...)
-spmd(mask, ::typeof(repr), xs...) = spmdmap(mask, repr, xs...)
+@spmd println(xs...) = spmdmap(__mask__, println, xs...)
+@spmd print(xs...) = spmdmap(__mask__, print, xs...)
+@spmd repr(xs...) = spmdmap(__mask__, repr, xs...)
 
-function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}) where {T, N}
+@spmd function iterate(iter::AbstractVec{T,N}) where {T, N}
   splat_and_vect(xs) = vect(xs...)
-  map(zip(mask, iter)) do x
+  map(zip(__mask__, iter)) do x
     if x[1]
       iterate(x[2])
     else
@@ -21,9 +21,9 @@ function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}) where {T, N}
   end |> splat_and_vect
 end
 
-function spmd(mask, ::typeof(iterate), iter::AbstractVec{T,N}, state::AbstractVec{S,N}) where {T, S, N}
+@spmd function iterate(iter::AbstractVec{T,N}, state::AbstractVec{S,N}) where {T, S, N}
   splat_and_vect(xs) = vect(xs...)
-  map(zip(mask, iter, state)) do x
+  map(zip(__mask__, iter, state)) do x
     if x[1]
       iterate(x[2], x[3])
     else
@@ -43,10 +43,10 @@ function masked_getfield(mask, xs::Vec{T,N}, names) where {T,N}
   end |> splat_and_vect
 end
 
-function spmd(mask, ::typeof(getfield), x::AbstractVec{T,N}, name::S) where {S,T,N}
+@spmd function getfield(x::AbstractVec{T,N}, name::S) where {S,T,N}
   vect(getfield.(x,name)...)
 end
-spmd(mask, ::typeof(getfield), x::AbstractVec{T,N}, name::AbstractVec{S,N}) where {S,T,N} = vect(getfield.(x, name)...)
+@spmd getfield(x::AbstractVec{T,N}, name::AbstractVec{S,N}) where {S,T,N} = vect(getfield.(x, name)...)
 
-spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::S) where {S,T,N} = masked_getfield(mask, x, Vec{S,N}(name))
-spmd(mask, ::typeof(getfield), x::Vec{T,N}, name::Vec{S,N}) where {S,T,N} = masked_getfield(mask, x, name)
+@spmd getfield(x::Vec{T,N}, name::S) where {S,T,N} = masked_getfield(__mask__, x, Vec{S,N}(name))
+@spmd getfield(x::Vec{T,N}, name::Vec{S,N}) where {S,T,N} = masked_getfield(__mask__, x, name)

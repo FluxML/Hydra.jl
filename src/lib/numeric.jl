@@ -37,6 +37,8 @@ simd_vec(x) = x
 svec(x::SIMD.Vec) = convert(SVec, x)
 svec(x) = x
 
+Base.sum(x::SVec) = sum(convert(SIMD.Vec, x))
+
 SVecOrVal{T} = Union{SVec{T},T}
 
 vecconvert(T, x::SIMD.Vec) = convert(SIMD.Vec{length(x),T}, x)
@@ -49,10 +51,10 @@ vecpromote(xs...) = map(x -> vecconvert(promote_type(map(datatype, xs)...), x), 
 for op in :[+, -, *, /, div, rem, &, |, !,
             ==, !=, >, >=, <, <=].args
     @eval begin
-        spmd(mask::Mask, ::typeof($op), xs::SVecOrVal{T}...) where T <: ScalarTypes =
+        @spmd $op(xs::SVecOrVal{T}...) where T <: ScalarTypes =
           svec($op(map(simd_vec, xs)...))
         # TODO: remove this when we can compile the usual promotion mechanisms
-        spmd(mask::Mask, ::typeof($op), xs::SVecOrVal{<:ScalarTypes}...) =
+        @spmd $op(xs::SVecOrVal{<:ScalarTypes}...) =
           svec($op(vecpromote(map(simd_vec, xs)...)...))
     end
 end
@@ -75,5 +77,5 @@ import Base.(:)
 (:)(start::T, stop::AbstractVec{S,N}) where {T,S,N} = (:)(promote(start, stop)...)
 (:)(start::AbstractVec{T,N}, stop::S) where {T,S,N} = (:)(promote(start, stop)...)
 
-spmd(mask, ::typeof(:), start, step, stop) = start:step:stop
-spmd(mask, ::typeof(:), start, stop) = start:stop
+@spmd (:)(start, step, stop) = start:step:stop
+@spmd (:)(start, stop) = start:stop

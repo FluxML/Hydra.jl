@@ -12,6 +12,8 @@ data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
 Base.getindex(xs::AbstractVec, i::Integer) = data(xs)[i]
 
+Base.getindex(xs::AbstractVec, is::AbstractVec) = vect(map(i -> xs[i], is)...)
+
 function Base.show(io::IO, v::AbstractVec)
   print(io, summary(v), "{")
   join(io, sprint.(show, v), ", ")
@@ -61,6 +63,8 @@ import Base: &, |, ~
 (a::Mask{N} & b::Mask{N}) where N = spmd(mask(N), &, a, b)
 (a::Mask{N} | b::Mask{N}) where N = spmd(mask(N), |, a, b)
 (~a::Mask{N}) where N = spmd(mask(N), ~, a)
+
+Base.sum(x::AbstractVec) = sum(data(x))
 
 # TODO use smaller words where possible
 # vect(xs::Bool...) = BitVec{length(xs)}(bitpack(UInt64, xs))

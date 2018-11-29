@@ -323,8 +323,9 @@ function pass(ir)
 end
 
 @generated function spmd(mask, f, args...)
-  m = meta(Tuple{f,unwraptype.(args)...})
-  m == nothing && return :(error("Can't SPMD $f"))
+  T = Tuple{f,unwraptype.(args)...}
+  m = meta(T)
+  m == nothing && return :(error($"Can't SPMD $T"))
   ir = IR(m)
   ir = pass(ir)
   argnames!(m, :f, :args)
