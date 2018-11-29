@@ -35,6 +35,7 @@ data(vec::Vec) = vec.data
 Vec(xs::Tuple) = Vec{Union{map(typeof,xs)...},length(xs)}(xs)
 
 vect(xs...) = Vec(xs)
+vect(xs::Nothing...) = Vec(xs)
 
 Base.summary(::Vec{T}) where T = "Vec{$T}"
 

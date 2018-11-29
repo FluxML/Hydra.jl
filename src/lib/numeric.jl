@@ -79,3 +79,6 @@ import Base.(:)
 
 @spmd (:)(start, step, stop) = start:step:stop
 @spmd (:)(start, stop) = start:stop
+
+using Base: not_int
+@spmd not_int(xs) = spmd(__mask__, ~, xs)
