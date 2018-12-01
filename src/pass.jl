@@ -321,6 +321,7 @@ function pass(ir)
 end
 
 @generated function spmd(mask, f, args...)
+  f <: Core.IntrinsicFunction && return :(error("Can't SPMD intrinsic $f"))
   T = Tuple{f,unwraptype.(args)...}
   m = meta(T)
   m == nothing && return :(error($"Can't SPMD $T"))
