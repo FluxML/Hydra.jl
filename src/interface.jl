@@ -15,7 +15,7 @@ macro spmd(ex)
   argnames = typeless.(args)
   cx = :($(esc(:__mask__))::Mask)
   fargs = [cx, :($f::$T), args...]
-  quote
+  MacroTools.@q begin
     @inline SPMD.spmd($(fargs...)) where $(Ts...) = $(esc(body))
   end
 end
