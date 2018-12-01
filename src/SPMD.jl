@@ -16,5 +16,6 @@ module SPMD
   include("interface.jl")
   include("lib/general.jl")
   include("lib/numeric.jl")
+  include("lib/lane.jl")
   include("pass.jl")
 end
