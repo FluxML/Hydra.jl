@@ -137,6 +137,10 @@ function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
     push!(ir, new_stmt)
     new_ssavalue = SSAValue(length(ir.defs))
     old_to_new_ssavalue[ssavalue] = new_ssavalue
+  elseif stmt.expr isa GlobalRef
+    push!(ir, stmt.expr)
+    new_ssavalue = SSAValue(length(ir.defs))
+    old_to_new_ssavalue[ssavalue] = new_ssavalue
   end
 end
 
@@ -308,6 +312,7 @@ function pass_delete_gotos(ir, block_to_block_mask)
 end
 
 unwraptype(::Type{SVec{T,N}}) where {T,N} = T
+unwraptype(::Type{VecArray{C,A,N}}) where {C,A,N} = C
 unwraptype(x) = x
 
 function pass(ir)

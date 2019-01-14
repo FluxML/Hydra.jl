@@ -1,6 +1,7 @@
 import SIMD
 using SIMD: ScalarTypes
 
+(V::Type{<:AbstractVec{T,N}})(x::T) where {T <: ScalarTypes, N} = V(ntuple(_ -> x, N))
 datatype(x::SIMD.Vec{N,T}) where {N,T} = T
 
 # Scalar vector type
@@ -19,7 +20,7 @@ SVec{T,N}(xs::NTuple{N,T}) where {T,N} = SVec{T,N}(map(VecElement, xs))
 
 # SIMD vectors are buggy – https://github.com/JuliaLang/julia/issues/30056
 # Flip this to test programs without using them.
-vect(xs::T...) where {T} = SVec(xs)
+vect(xs::T...) where {T <: ScalarTypes} = SVec(xs)
 # vect(xs::T...) where {T} = Vec(xs)
 
 data(xs::SVec) = getfield.(xs.data, :value)
@@ -40,7 +41,7 @@ svec(x) = x
 Base.sum(x::SVec) = sum(convert(SIMD.Vec, x))
 
 SVecOrVal{T} = Union{SVec{T},T}
-
+VecOrVal{T} = Union{Vec{T},T}
 vecconvert(T, x::SIMD.Vec) = convert(SIMD.Vec{length(x),T}, x)
 vecconvert(T, x) = convert(T, x)
 
