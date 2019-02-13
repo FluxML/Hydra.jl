@@ -3,45 +3,63 @@ struct VecArray{C,A,N} <: AbstractVec{C,N}
   sizes
 end
 
+Base.show(io::IO, x::VecArray) = println(io, "VecArray { ", show(x.batch), " }")
+
 data(xs::VecArray) = xs.batch
 
 VecArray(batch::C...) where {C <: AbstractArray} = let
-  batch, sizes = tobatch(batch...)
-  VecArray{C, typeof(batch), length(batch)}(batch, sizes)
+  batched, sizes = tobatch(batch...)
+  VecArray{C, typeof(batched), length(batch)}(batched, sizes)
 end
 
 function tobatch(xs::A...) where {T <: ScalarTypes,A <: AbstractArray{T}}
   dims = max.(size.(xs)...)
-  batch = similar(xs[1], T, dims..., length(xs)) #TODO: this feels wrooooong
+  batch = zeros(T, dims..., length(xs)) #TODO: this feels wrooooong
   for (i,x) in enumerate(xs)
     setindex!(batch, x, axes(x)..., i)
   end
   (batch, size.(xs))
 end
 
-# function tobatch(xs::A...) where {T <: AbstractArray, A <: AbstractArray{T}}
-#   dims = max.(size.(xs)...)
-#   batch = similar(xs[1], VecArray, dims...)
-#   for (i) in 1:length(batch)
-#     getindex_or_nothing(x, i) = try x[i] catch e nothing end
-#     xs_or_nothing = getindex_or_nothing.(xs, i)
-#     first_x_not_nothing = something(xs_or_nothing...)
-#     padded_xs = map(x->x == nothing ? zeros(size(first_x_not_nothing)) : x, xs_or_nothing)
-#     batch[i] = vect(padded_xs...)
-#   end
-#   (batch, size.(xs))
-# end
+function select(conds::Mask{N}, first_vals::VecArray{C,T,N}, second_vals::VecArray{C,T,N}) where {C,T,N}
+  result = zero(first_vals.batch)
+  for (i,cond) in enumerate(conds)
+    result[axes(result)[1:end-1]..., i] = cond ?
+      first_vals.batch[axes(result)[1:end-1]..., i] :
+      second_vals.batch[axes(result)[1:end-1]..., i]
+  end
+  return VecArray{C,T,N}(result, first_vals.sizes)
+end
+
+function select(conds::Mask{N}, first_vals::VecArray{C,T,N}, second_vals::C) where {C <: AbstractArray,T,N}
+  result = zero(first_vals.batch)
+  for (i,cond) in enumerate(conds)
+    result[axes(result)[1:end-1]..., i] = cond ?
+      first_vals.batch[axes(result)[1:end-1]..., i] :
+      second_vals
+  end
+  return VecArray{C,T,N}(result, first_vals.sizes)
+end
+
+function select(conds::Mask{N}, first_vals::C, second_vals::VecArray{C,T,N}) where {C <: AbstractArray,T,N}
+  result = zero(second_vals.batch)
+  for (i,cond) in enumerate(conds)
+    result[axes(result)[1:end-1]..., i] = cond ?
+      first_vals :
+      second_vals.batch[axes(result)[1:end-1]..., i]
+  end
+  return VecArray{C,T,N}(result, first_vals.sizes)
+end
 
 vect(xs::AbstractArray{T}...) where {T <: ScalarTypes} = VecArray(xs...)
-
+VecArrayOrArrayOrVal{C,A,N} = Union{VecArray{C,A,N}, C, ScalarTypes}
+sizes(xs) = xs[findfirst(x->x isa VecArray, xs)].sizes
 # element wise ops
 for op in :[+, -, &, |, !,
             ==, !=, >, >=, <, <=].args
     @eval begin
-        @spmd $op(xs::VecArray{C,A,N}, ys::C) where {C,A,N} =
-          VecArray{C,A,N}($op.(data.((xs,ys))...), xs.sizes)
-        @spmd $op(xs::C, ys::VecArray{C,A,N}) where {C,A,N} =
-          VecArray{C,A,N}($op.(data.((xs,ys))...), xs.sizes)
+        @spmd $op(xs::VecArrayOrArrayOrVal{C,A,N}...) where {C,A,N} =
+          VecArray{C,A,N}($op.(data.(xs)...), sizes(xs))
     end
 end
 
@@ -64,8 +82,6 @@ end
   sizes = map(s->create_new_sizes(size(xs),s),ys.sizes)
   VecArray{C2,typeof(result),N}(result, sizes)
 end
-
-VecArrayOrArrayOrVal = Union{VecArray, AbstractArray, ScalarTypes}
 
 @spmd Base.Broadcast.broadcasted(f,xs::VecArrayOrArrayOrVal...) = Base.Broadcast.broadcasted(f,data.(xs)...)
 @spmd Base.Broadcast.materialize(x) = Base.Broadcast.materialize(x)
