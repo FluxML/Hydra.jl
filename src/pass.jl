@@ -137,6 +137,10 @@ function fix_stmt(ssavalue, stmt, ir, old_to_new_ssavalue)
     push!(ir, new_stmt)
     new_ssavalue = SSAValue(length(ir.defs))
     old_to_new_ssavalue[ssavalue] = new_ssavalue
+  elseif stmt.expr isa GlobalRef
+    push!(ir, stmt.expr)
+    new_ssavalue = SSAValue(length(ir.defs))
+    old_to_new_ssavalue[ssavalue] = new_ssavalue
   end
 end
 
@@ -277,30 +281,48 @@ function pass_call(ir::IR, block_to_cond)
   new_ir
 end
 
+function get_all_loop_headers(ir)
+  cfg = CFG(ir).blocks
+  loop_footers = filter(x->any(x[1] .> x[2].succs), collect(enumerate(cfg)))
+  loop_headers = []
+  for (footer_id, footer) in loop_footers
+    possible_header_indices = footer.succs[1]:footer_id-1
+    header_id = filter(b_id->any(cfg[b_id].succs .== footer_id+1),possible_header_indices)[1]
+    push!(loop_headers, header_id)
+  end
+  loop_headers
+end
+
+function for_loop_aggregator(masks)
+  return any(masks)
+end
+
 function pass_delete_gotos(ir, block_to_block_mask)
+  loop_headers = get_all_loop_headers(ir)
   new_ir = IR(ir.lines, ir.args)
   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
   cfg = CFG(ir).blocks
   for b in blocks(ir)
     for (ssavalue, stmt) in b
       if stmt.expr isa GotoIfNot
-        continue
+        if b.id in loop_headers
+          mask = block_to_block_mask[(b.id, b.id+1)]
+          push!(new_ir, xcall(SPMD, :for_loop_aggregator, mask))
+          new_ssavalue = SSAValue(length(new_ir.defs))
+          new_stmt = GotoIfNot(new_ssavalue, stmt.expr.dest)
+          push!(new_ir, new_stmt)
+        else
+          continue
+        end
       elseif stmt.expr isa GotoNode
         if stmt.expr.label < b.id
-          mask = block_to_block_mask[(b.id, stmt.expr.label)]
-          push!(new_ir, xcall(SPMD, :not_mask, mask))
-          not_mask = SSAValue(length(new_ir.defs))
-          push!(new_ir, xcall(:all, not_mask))
-          new_ssavalue = SSAValue(length(new_ir.defs))
-          new_stmt = GotoIfNot(new_ssavalue, stmt.expr.label)
-          push!(new_ir, new_stmt)
-          block!(new_ir)
+          push!(new_ir, stmt)
         end
       else
         fix_stmt(ssavalue, stmt, new_ir, old_to_new_ssavalue)
       end
     end
-    if (b.id+1 <= length(cfg) && is_header(cfg[b.id+1], b.id+1))
+    if (b.id != length(blocks(ir)))
       block!(new_ir)
     end
   end
@@ -308,6 +330,7 @@ function pass_delete_gotos(ir, block_to_block_mask)
 end
 
 unwraptype(::Type{SVec{T,N}}) where {T,N} = T
+unwraptype(::Type{VecArray{C,A,N}}) where {C,A,N} = C
 unwraptype(x) = x
 
 function pass(ir)

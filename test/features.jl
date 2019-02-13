@@ -59,6 +59,18 @@ function for_loop(x)
   a
 end
 
+W = 1:60000 |> collect |> x->reshape(x,(200,300))
+b = 1:200 |> collect
+
+function rnn(sequence, ht)
+  i = 1
+  while i <= length(sequence)
+    word = sequence[i]
+    ht = W * word + b + ht
+    i += 1
+  end
+  ht
+end
 
 mask = SPMD.vect(true,true,true,true)
 
@@ -73,3 +85,10 @@ input = Vector{Int32}([1,5,12,-3])
 
 input = Vector{Int32}([2,32,-1,21])
 @test SPMD.spmd(mask, for_loop, SPMD.vect(input...)) == SPMD.vect(map(for_loop, input)...)
+
+mask = SPMD.vect(true,true)
+
+input = (
+  [collect(1:300),collect(301:600),collect(601:900)],
+  [collect(901:1200), collect(1201:1500)])
+@test SPMD.spmd(mask, rnn, SPMD.vect(input...), zeros(Int64, 200)).batch == SPMD.vect(map(x->rnn(x,zeros(Int64, 200)), input)...).batch

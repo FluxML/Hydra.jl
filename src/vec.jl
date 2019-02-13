@@ -7,8 +7,6 @@ datatype(::AbstractVec{T}) where T = T
 
 data(x::AbstractVec) = error("`data` not implemented for $(typeof(x))")
 
-(V::Type{<:AbstractVec{T,N}})(x::T) where {T, N} = V(ntuple(_ -> x, N))
-
 Base.length(xs::AbstractVec{T,N}) where {T,N} = N
 Base.getindex(xs::AbstractVec, i::Integer) = data(xs)[i]
 
