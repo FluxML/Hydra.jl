@@ -3,7 +3,7 @@ struct VecArray{C,A,N} <: AbstractVec{C,N}
   sizes
 end
 
-Base.show(io::IO, x::VecArray) = println(io, "VecArray { ", show(x.batch), " }")
+Base.show(io::IO, x::VecArray) = println(io, "VecArray")
 
 data(xs::VecArray) = xs.batch
 
@@ -12,7 +12,11 @@ VecArray(batch::C...) where {C <: AbstractArray} = let
   VecArray{C, typeof(batched), length(batch)}(batched, sizes)
 end
 
-function tobatch(xs::A...) where {T <: ScalarTypes,A <: AbstractArray{T}}
+function tobatch(xs::A...) where {T <: ScalarTypes,N,A <: AbstractArray{T,N}}
+  if all(y->y==size(xs[1]), size.(xs))
+    res = cat(xs..., dims=N+1)
+    return (res, size.(xs))
+  end
   dims = max.(size.(xs)...)
   batch = zeros(T, dims..., length(xs)) #TODO: this feels wrooooong
   for (i,x) in enumerate(xs)
@@ -85,3 +89,15 @@ end
 
 @spmd Base.Broadcast.broadcasted(f,xs::VecArrayOrArrayOrVal...) = Base.Broadcast.broadcasted(f,data.(xs)...)
 @spmd Base.Broadcast.materialize(x) = Base.Broadcast.materialize(x)
+
+type_minus_one(xs::C) where {T,N, C<:AbstractArray{T,N}} = AbstractArray{T,N-1}
+
+@spmd reshape(xs::VecArray{C,A,N}, dims) where {C,A,N} = begin
+  res = reshape(data(xs), dims..., N)
+  VecArray{type_minus_one(res),typeof(res),N}(res, repeat([dims...], N))
+end
+
+@spmd reshape(xs::VecArray{C,A,N}, dims...) where {C,A,N} = begin
+  res = reshape(data(xs), dims..., N)
+  VecArray{type_minus_one(res),typeof(res),N}(res, repeat([dims...], N))
+end
