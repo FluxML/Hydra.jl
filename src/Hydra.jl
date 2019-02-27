@@ -18,5 +18,6 @@ module SPMD
   include("lib/numeric.jl")
   include("lib/array.jl")
   include("lib/lane.jl")
+  include("uniform.jl")
   include("pass.jl")
 end
