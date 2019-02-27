@@ -1,5 +1,5 @@
-using SPMD, Test
-using SPMD: shuffle
+using Hydra, Test
+using Hydra: shuffle
 
 @test lane() == lanewidth() == 1
 
@@ -72,23 +72,23 @@ function rnn(sequence, ht)
   ht
 end
 
-mask = SPMD.vect(true,true,true,true)
+mask = Hydra.vect(true,true,true,true)
 
 input = Vector{Int32}([1,6,11,-1])
-@test SPMD.spmd(mask, if_statement, SPMD.vect(input...)) == SPMD.vect(map(if_statement, input)...)
+@test Hydra.spmd(mask, if_statement, Hydra.vect(input...)) == Hydra.vect(map(if_statement, input)...)
 
 input = Vector{Int32}([5,5,5,5])
-@test SPMD.spmd(mask, while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)
+@test Hydra.spmd(mask, while_loop, Hydra.vect(input...)) == Hydra.vect(map(while_loop, input)...)
 
 input = Vector{Int32}([1,5,12,-3])
-@test SPMD.spmd(mask, while_loop, SPMD.vect(input...)) == SPMD.vect(map(while_loop, input)...)
+@test Hydra.spmd(mask, while_loop, Hydra.vect(input...)) == Hydra.vect(map(while_loop, input)...)
 
 input = Vector{Int32}([2,32,-1,21])
-@test SPMD.spmd(mask, for_loop, SPMD.vect(input...)) == SPMD.vect(map(for_loop, input)...)
+@test Hydra.spmd(mask, for_loop, Hydra.vect(input...)) == Hydra.vect(map(for_loop, input)...)
 
-mask = SPMD.vect(true,true)
+mask = Hydra.vect(true,true)
 
 input = (
   [collect(1:300),collect(301:600),collect(601:900)],
   [collect(901:1200), collect(1201:1500)])
-@test SPMD.spmd(mask, rnn, SPMD.vect(input...), zeros(Int64, 200)).batch == SPMD.vect(map(x->rnn(x,zeros(Int64, 200)), input)...).batch
+@test Hydra.spmd(mask, rnn, Hydra.vect(input...), zeros(Int64, 200)).batch == Hydra.vect(map(x->rnn(x,zeros(Int64, 200)), input)...).batch

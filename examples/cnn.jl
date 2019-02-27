@@ -1,4 +1,4 @@
-using SPMD: @spmd, spmd, vect, VecArray, @code_ir
+using Hydra: @spmd, spmd, vect, VecArray, @code_ir
 using Flux
 using Flux.Tracker: TrackedArray, back!
 using NNlib: conv

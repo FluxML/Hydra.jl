@@ -1,4 +1,4 @@
-# SPMD primitives
+# Hydra primitives
 
 named(arg) = isexpr(arg, :(::)) && length(arg.args) == 1 ? :($(gensym())::$(arg.args[1])) : arg
 
@@ -16,11 +16,11 @@ macro spmd(ex)
   cx = :($(esc(:__mask__))::Mask)
   fargs = [cx, :($f::$T), args...]
   MacroTools.@q begin
-    @inline SPMD.spmd($(fargs...)) where $(Ts...) = $(esc(body))
+    @inline Hydra.spmd($(fargs...)) where $(Ts...) = $(esc(body))
   end
 end
 
-# SPMD execution
+# Hydra execution
 
 mask(n) = vect(ntuple(_ -> true, n)...)
 

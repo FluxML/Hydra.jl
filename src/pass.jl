@@ -93,7 +93,7 @@ function pass_loops_result_value(ir, block_to_cond)
         if haskey(phinodes_values, ssavalue)
           cond = old_to_new_ssavalue[block_to_cond[b.id]]
           header_value = old_to_new_ssavalue[phinodes_values[ssavalue]]
-          push!(new_ir, xcall(SPMD, :select, cond, new_ssavalue, header_value))
+          push!(new_ir, xcall(Hydra, :select, cond, new_ssavalue, header_value))
           new_ssavalue = SSAValue(length(new_ir.defs))
         end
         old_to_new_ssavalue[ssavalue] = new_ssavalue
@@ -150,7 +150,7 @@ function pass_create_masks(ir)
   old_to_new_ssavalue = Dict{SSAValue, SSAValue}()
   block_to_block_mask = Dict{Tuple{Int64, Int64}, Union{SSAValue, Argument}}()
   block_to_block_mask[(0,1)] = Argument(0)
-  cfg.blocks[1] = SPMD.BasicBlock(cfg.blocks[1].stmts, [0], cfg.blocks[1].succs)
+  cfg.blocks[1] = Hydra.BasicBlock(cfg.blocks[1].stmts, [0], cfg.blocks[1].succs)
   block_to_mask = Dict{Int64, Union{SSAValue, Argument}}()
   for (b, b_cfg) in zip(blocks(ir), cfg.blocks)
     forward_preds = filter(k-> k == 0 || k < b.id, b_cfg.preds)
@@ -163,7 +163,7 @@ function pass_create_masks(ir)
       end
       cond = incoming_masks[1]
       for other_cond in incoming_masks[2:end]
-        push!(forward_ir, xcall(SPMD, :or_mask, cond, other_cond))
+        push!(forward_ir, xcall(Hydra, :or_mask, cond, other_cond))
         cond = SSAValue(length(forward_ir.defs))
       end
       block_to_mask[b.id] = cond
@@ -182,12 +182,12 @@ function pass_create_masks(ir)
       cond = old_to_new_ssavalue[b.bb.gotos[1].expr.cond]
       else_dest = b.bb.gotos[1].expr.dest
       if_dest = b.id + 1
-      push!(forward_ir, xcall(SPMD, :and_mask, block_to_mask[b.id], cond))
+      push!(forward_ir, xcall(Hydra, :and_mask, block_to_mask[b.id], cond))
       if_cond = SSAValue(length(forward_ir.defs))
       block_to_block_mask[(b.id, if_dest)] = if_cond
-      push!(forward_ir, xcall(SPMD, :not_mask, cond))
+      push!(forward_ir, xcall(Hydra, :not_mask, cond))
       not_cond = SSAValue(length(forward_ir.defs))
-      push!(forward_ir, xcall(SPMD, :and_mask, block_to_mask[b.id], not_cond))
+      push!(forward_ir, xcall(Hydra, :and_mask, block_to_mask[b.id], not_cond))
       else_cond = SSAValue(length(forward_ir.defs))
       block_to_block_mask[(b.id, else_dest)] = else_cond
     end
@@ -234,10 +234,10 @@ function pass_from_phi_to_select(ir, block_to_block_mask)
         values = map(x -> old_to_new_ssavalue[x], stmt.expr.values)
         second_cond = conds[2]
         first_val, second_val = values[1], values[2]
-        push!(new_ir, xcall(SPMD, :select, second_cond, second_val, first_val))
+        push!(new_ir, xcall(Hydra, :select, second_cond, second_val, first_val))
         new_ssavalue = SSAValue(length(new_ir.defs))
         for (condition, value) in zip(conds[3:end], values[3:end])
-          push!(new_ir, xcall(SPMD, :select, condition, value, new_ssavalue))
+          push!(new_ir, xcall(Hydra, :select, condition, value, new_ssavalue))
           new_ssavalue = SSAValue(length(new_ir.defs))
         end
         old_to_new_ssavalue[ssavalue] = new_ssavalue
@@ -257,17 +257,17 @@ function pass_call(ir::IR, block_to_cond)
   for b in blocks(ir)
     for (ssavalue, stmt) in b
       if stmt.expr isa Expr
-        is_and_mask(x) = x == GlobalRef(SPMD, :and_mask)
-        is_not_mask(x) = x == GlobalRef(SPMD, :not_mask)
-        is_or_mask(x) = x == GlobalRef(SPMD, :or_mask)
+        is_and_mask(x) = x == GlobalRef(Hydra, :and_mask)
+        is_not_mask(x) = x == GlobalRef(Hydra, :not_mask)
+        is_or_mask(x) = x == GlobalRef(Hydra, :or_mask)
         new_stmt = nothing
         funct = stmt.expr.args[1]
         if is_and_mask(funct) || is_not_mask(funct) || is_or_mask(funct)
           new_stmt = stmt
         else
-          new_stmt = xcall(SPMD, :spmd, block_to_cond[b.id], stmt.expr.args...)
+          new_stmt = xcall(Hydra, :spmd, block_to_cond[b.id], stmt.expr.args...)
         end
-        # new_stmt = xcall(SPMD, :spmd, stmt.expr.args[1], block_to_cond[b.id], stmt.expr.args[2:length(stmt.expr.args)]...)
+        # new_stmt = xcall(Hydra, :spmd, stmt.expr.args[1], block_to_cond[b.id], stmt.expr.args[2:length(stmt.expr.args)]...)
 
         push!(new_ir, new_stmt)
       else
@@ -307,7 +307,7 @@ function pass_delete_gotos(ir, block_to_block_mask)
       if stmt.expr isa GotoIfNot
         if b.id in loop_headers
           mask = block_to_block_mask[(b.id, b.id+1)]
-          push!(new_ir, xcall(SPMD, :for_loop_aggregator, mask))
+          push!(new_ir, xcall(Hydra, :for_loop_aggregator, mask))
           new_ssavalue = SSAValue(length(new_ir.defs))
           new_stmt = GotoIfNot(new_ssavalue, stmt.expr.dest)
           push!(new_ir, new_stmt)
