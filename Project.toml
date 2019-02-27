@@ -1,6 +1,6 @@
-name = "SPMD"
+name = "Hydra"
 uuid = "174f11e0-a08b-11e8-3415-855165fdcec4"
-authors = ["Mike J Innes <mike.j.innes@gmail.com>"]
+authors = ["Marco Concetto Rudilosso <marcoc.r@outlook.com>", "Mike J Innes <mike.j.innes@gmail.com>"]
 version = "0.1.0"
 
 [deps]
