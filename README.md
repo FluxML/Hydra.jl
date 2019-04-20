@@ -1,45 +1,55 @@
-# Hydra.jl
-SPMD + Neural Nets
+# Hydra
 
-# DISCLAIMER: THIS IS NOT READY TO BE USED BY MOST PEOPLE
-
-# What is Hydra.jl?
-
-Hydra.jl main component is a compiler pass which transforms the Julia IR to allow people to write their functions on an individual example, but run them on multiple examples with no extra developer work. It follows the SPMD paradigm and takes inspiration mainly from ISPC, but also matchbox.
-
-It has been created with a particular focus on Deep Learning applications, but it can also be used more generally.
-
-# Example
-
-Let's say we write a function that works on a scalar, like: 
+Hydra provides a SPMD programming model for Julia, intended for auto batching of
+machine learning models. Hydra is an early proof-of-concept; it ready for simple
+alpha testing and testers should open issues liberally.
 
 ```julia
-function f(x)
-  a = x + 1
-  i = 0
-  while x > i
-    if x >= 10
-      a += 3
-    elseif x >= 5
-      a += 2
-    else
-      a += 1
-    end
-    i += 1
-  end
-  a
-end
+julia> @spmd 4 println("Hello, World!")
+Hello, World!
+Hello, World!
+Hello, World!
+Hello, World!
 ```
 
-We can then call this function with more than 1 input by doing: 
+`@spmd N` is analagous to `for i = 1:N ...`, with an important difference;
+each "lane" (iteration) runs *in lockstep*, one instruction from each lane at
+a time.
+
+```
+julia> @spmd 4 begin
+         println("Hello from lane ", lane())
+         println("Goodbye from lane ", lane())
+       end
+Hello from lane 1
+Hello from lane 2
+Hello from lane 3
+Hello from lane 4
+Goodbye from lane 1
+Goodbye from lane 2
+Goodbye from lane 3
+Goodbye from lane 4
+```
+
+This allows computations across lanes to be run *batched*. For example, the set
+of return values from `lane()` can be stored as a tuple and use [SIMD
+operations](https://github.com/eschnett/SIMD.jl); thus 4 lanes of SPMD code can
+potentially be just as fast as a single lane of normal scalar code. Hydra also
+handles batches of more complex objects such as arrays, allowing it to express
+the kinds of batching used in machine learning.
 
 ```julia
-using Hydra
-
-mask = Hydra.vect(true,true,true,true)
-input = Vector{Int32}([1,5,12,-3])
-Hydra.spmd(mask, f, Hydra.vect(input...))
+julia> @spmd 4 lanesum(lane()*2)
+20
 ```
 
-This will make use (where possible) of vector registers on different CPU architectures, instead of naively looping through each example one at a time. Similarly, when operating with matrixes and array on GPU, we will batch operations. 
+Crucially, Hydra does this while taking care of control flow, so we hope to
+bring great performance to almost any Julia program.
 
+```julia
+julia> @spmd 4 begin
+         iseven(lane()) && println("Hello from lane ", lane())
+       end
+Hello from lane 2
+Hello from lane 4
+```
